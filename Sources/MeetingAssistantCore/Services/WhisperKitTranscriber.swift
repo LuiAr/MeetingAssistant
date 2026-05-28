@@ -40,54 +40,33 @@ public struct WhisperTranscriptionProgress: Sendable, Equatable {
 public actor WhisperKitTranscriber {
   public static let defaultModel = "openai_whisper-large-v3-v20240930_turbo"
 
+  public typealias PipelineProvider = @Sendable () async throws -> WhisperKit
+
   private let modelName: String
   private let localeIdentifier: String
   private let progress: (@Sendable (WhisperTranscriptionProgress) -> Void)?
+  private let pipelineProvider: PipelineProvider
   private var pipe: WhisperKit?
 
   public init(
     modelName: String = WhisperKitTranscriber.defaultModel,
     localeIdentifier: String,
+    pipelineProvider: @escaping PipelineProvider,
     progress: (@Sendable (WhisperTranscriptionProgress) -> Void)? = nil
   ) {
     self.modelName = modelName
     self.localeIdentifier = localeIdentifier
+    self.pipelineProvider = pipelineProvider
     self.progress = progress
   }
 
   public func prepare() async throws {
     if pipe != nil { return }
-
-    let modelFolder: URL
-    do {
-      let model = self.modelName
-      let callback = self.progress
-      modelFolder = try await WhisperKit.download(
-        variant: modelName,
-        from: "argmaxinc/whisperkit-coreml",
-        progressCallback: { foundationProgress in
-          let fraction = foundationProgress.fractionCompleted
-          callback?(.init(phase: .downloadingModel(fraction: fraction), modelName: model))
-        }
-      )
-    } catch {
-      throw WhisperTranscriptionError.modelDownloadFailed(error.localizedDescription)
-    }
-
     progress?(.init(phase: .loadingModel, modelName: modelName))
-
-    let config = WhisperKitConfig(
-      model: modelName,
-      modelFolder: modelFolder.path,
-      verbose: false,
-      logLevel: .error,
-      prewarm: false,
-      load: true,
-      download: false
-    )
-
     do {
-      pipe = try await WhisperKit(config)
+      pipe = try await pipelineProvider()
+    } catch let error as WhisperTranscriptionError {
+      throw error
     } catch {
       throw WhisperTranscriptionError.modelLoadFailed(error.localizedDescription)
     }

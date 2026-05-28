@@ -43,3 +43,8 @@ MeetingAssistant is a SwiftPM-based native macOS app. The executable target is i
 Update this file when changing architecture, tooling, release workflow, recording/transcription strategy, or known capture limitations.
 
 Update `README.md` when changing user-facing behavior, setup steps, permissions, saved file layout, transcript format, or known limitations.
+
+
+## Implementation Plan
+
+Update each step when it needs to (if its done, ongoing, etc....)

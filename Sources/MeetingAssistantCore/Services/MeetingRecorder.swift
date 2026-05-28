@@ -16,16 +16,24 @@ public final class MeetingRecorder {
   public let permissions = PermissionCenter()
 
   private let store: RecordingStore
+  private let modelManager: ModelDownloadManager
   private var stateMachine = RecordingStateMachine()
   private var captureService: SystemAudioCaptureService?
   private var timerTask: Task<Void, Never>?
 
-  public init(store: RecordingStore) {
+  public init(store: RecordingStore, modelManager: ModelDownloadManager? = nil) {
     self.store = store
+    self.modelManager = modelManager ?? .shared
   }
 
   public func startRecording(title: String, localeIdentifier: String, microphoneDeviceID: String?) async {
     guard status == .idle || status == .completed || status == .failed else { return }
+
+    guard modelManager.isModelOnDisk() else {
+      stateMachine.fail("The Whisper model has not been downloaded yet. Open Settings to download it before recording.")
+      publishState()
+      return
+    }
 
     stateMachine.requestPermissions()
     publishState()
@@ -181,8 +189,12 @@ public final class MeetingRecorder {
   }
 
   private func finalTranscript(for document: RecordingDocument, pauses: [PauseInterval]) async -> [TranscriptSegment] {
+    let manager = modelManager
     let transcriber = WhisperKitTranscriber(
       localeIdentifier: document.metadata.localeIdentifier,
+      pipelineProvider: { @Sendable in
+        try await manager.ensureReady()
+      },
       progress: { [weak self] update in
         Task { @MainActor [weak self] in
           self?.transcriptionProgress = update

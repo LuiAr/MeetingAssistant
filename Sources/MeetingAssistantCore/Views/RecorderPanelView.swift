@@ -7,6 +7,8 @@ struct RecorderPanelView: View {
   @AppStorage("selectedMicrophoneDeviceID") private var selectedMicrophoneDeviceID = ""
   @State private var title = ""
   @State private var microphones: [MicrophoneDevice] = []
+  @State private var modelManager = ModelDownloadManager.shared
+  @Environment(\.openSettings) private var openSettings
 
   var body: some View {
     VStack(alignment: .leading, spacing: 14) {
@@ -70,6 +72,12 @@ struct RecorderPanelView: View {
 
       LiveTranscriptStrip(segments: recorder.liveTranscript)
 
+      if !isModelReady {
+        ModelNotReadyBanner(status: modelManager.status) {
+          openSettings()
+        }
+      }
+
       if let progress = recorder.transcriptionProgress {
         TranscriptionProgressBanner(progress: progress)
       }
@@ -83,7 +91,12 @@ struct RecorderPanelView: View {
     }
     .task {
       microphones = MicrophoneDeviceProvider.devices()
+      modelManager.refreshStatus()
     }
+  }
+
+  private var isModelReady: Bool {
+    modelManager.isModelOnDisk()
   }
 
   @ViewBuilder
@@ -101,7 +114,8 @@ struct RecorderPanelView: View {
         Label("Record", systemImage: "record.circle")
       }
       .buttonStyle(.borderedProminent)
-      .disabled(!canRecord)
+      .disabled(!canRecord || !isModelReady)
+      .help(isModelReady ? "" : "Download the Whisper model in Settings before recording.")
 
       Button {
         recorder.pause()
@@ -217,5 +231,70 @@ private struct LiveTranscriptStrip: View {
       }
     }
     .font(.callout)
+  }
+}
+
+private struct ModelNotReadyBanner: View {
+  var status: ModelStatus
+  var openSettings: () -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: iconName)
+        .foregroundStyle(iconColor)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .font(.callout.weight(.semibold))
+        Text(subtitle)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      Spacer()
+      Button("Open Settings") {
+        openSettings()
+      }
+      .buttonStyle(.bordered)
+    }
+    .padding(.vertical, 8)
+    .padding(.horizontal, 12)
+    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+  }
+
+  private var iconName: String {
+    switch status {
+    case .downloading, .loading, .waitingForNetwork: return "arrow.down.circle"
+    case .failed: return "exclamationmark.triangle.fill"
+    default: return "arrow.down.circle"
+    }
+  }
+
+  private var iconColor: Color {
+    switch status {
+    case .failed: return .red
+    case .downloading, .loading, .waitingForNetwork: return .orange
+    default: return .accentColor
+    }
+  }
+
+  private var title: String {
+    switch status {
+    case .downloading, .loading, .waitingForNetwork:
+      return "Preparing transcription model — \(status.displayLabel)"
+    case .failed:
+      return "Model download failed"
+    default:
+      return "Whisper model not downloaded"
+    }
+  }
+
+  private var subtitle: String {
+    switch status {
+    case .failed:
+      return "Open Settings to retry the download."
+    case .downloading, .loading, .waitingForNetwork:
+      return "You can record once the model is ready."
+    default:
+      return "Download the model from Settings before starting a recording."
+    }
   }
 }

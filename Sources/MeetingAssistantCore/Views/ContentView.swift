@@ -6,6 +6,7 @@ public struct ContentView: View {
   @State private var recorder: MeetingRecorder
   @State private var selectedRecordingID: UUID?
   @State private var searchText = ""
+  @Environment(\.openSettings) private var openSettings
 
   @MainActor
   public init(rootDirectory: URL = RecordingStore.defaultRootDirectory) {
@@ -34,6 +35,17 @@ public struct ContentView: View {
         } else {
           EmptyLibraryView()
         }
+      }
+    }
+    .toolbar {
+      ToolbarItem(placement: .primaryAction) {
+        Button {
+          openSettings()
+        } label: {
+          Label("Settings", systemImage: "gearshape")
+        }
+        .help("Open Settings (⌘,)")
+        .keyboardShortcut(",", modifiers: [.command])
       }
     }
     .task {
