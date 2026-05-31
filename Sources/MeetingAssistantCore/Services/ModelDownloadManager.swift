@@ -55,11 +55,22 @@ public enum ModelStatus: Sendable, Equatable {
 public final class ModelDownloadManager {
   public static let shared = ModelDownloadManager()
 
+  // The active variant is fixed at construction for now. When a user-facing picker is added,
+  // replace these `let`s with `var`s and add a `switchVariant(to:)` that tears down `loadedPipe`,
+  // updates `modelName` / `repo`, and re-enters `refreshStatus()`. The download/load path
+  // already keys off these fields, so no other call sites should need to change.
   public let modelName: String
   public let repo: String
 
+  /// The catalog entry corresponding to `modelName`, when one is registered.
+  public var activeVariant: WhisperModelVariant? {
+    WhisperModelCatalog.variant(withID: modelName)
+  }
+
   public private(set) var status: ModelStatus = .unknown
   public private(set) var lastError: String?
+  /// Total bytes used by the on-disk model folder, or nil when not downloaded.
+  public private(set) var onDiskSizeBytes: Int64?
 
   private var downloadTask: Task<Void, Never>?
   private var loadTask: Task<Void, Error>?
@@ -98,9 +109,35 @@ public final class ModelDownloadManager {
       } else {
         status = .downloaded
       }
+      onDiskSizeBytes = computeOnDiskSize()
     } else {
       status = .notDownloaded
+      onDiskSizeBytes = nil
     }
+  }
+
+  /// Walks `modelFolder` and returns its total byte size, or nil if it doesn't exist.
+  private func computeOnDiskSize() -> Int64? {
+    let folder = modelFolder
+    let fm = FileManager.default
+    guard fm.fileExists(atPath: folder.path) else { return nil }
+    guard let enumerator = fm.enumerator(
+      at: folder,
+      includingPropertiesForKeys: [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileSizeKey],
+      options: [.skipsHiddenFiles]
+    ) else { return nil }
+
+    var total: Int64 = 0
+    for case let url as URL in enumerator {
+      let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileSizeKey])
+      guard values?.isRegularFile == true else { continue }
+      if let allocated = values?.totalFileAllocatedSize {
+        total += Int64(allocated)
+      } else if let size = values?.fileSize {
+        total += Int64(size)
+      }
+    }
+    return total
   }
 
   public func isModelOnDisk() -> Bool {
@@ -205,6 +242,7 @@ public final class ModelDownloadManager {
         // the conventional location and let load decide.
         _ = folder
         status = .downloaded
+        onDiskSizeBytes = computeOnDiskSize()
         _ = try await loadPipelineIfNeeded()
         return
       } catch is CancellationError {
