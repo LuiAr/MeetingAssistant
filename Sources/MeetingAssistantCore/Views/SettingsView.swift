@@ -20,6 +20,13 @@ private struct ModelsSettingsView: View {
   @State private var manager = ModelDownloadManager.shared
   @State private var showDeleteConfirm = false
 
+  fileprivate static let sizeFormatter: ByteCountFormatter = {
+    let f = ByteCountFormatter()
+    f.allowedUnits = [.useMB, .useGB]
+    f.countStyle = .file
+    return f
+  }()
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
@@ -42,21 +49,12 @@ private struct ModelsSettingsView: View {
                 .textSelection(.enabled)
             }
 
-            LabeledContent("Repository") {
-              Text(manager.repo)
-                .monospaced()
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .foregroundStyle(.secondary)
-            }
-
-            LabeledContent("Install Location") {
-              Text(manager.modelFolder.path)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
+            if let bytes = manager.onDiskSizeBytes {
+              LabeledContent("Size on Disk") {
+                Text(Self.sizeFormatter.string(fromByteCount: bytes))
+                  .foregroundStyle(.secondary)
+                  .monospacedDigit()
+              }
             }
 
             Divider()
@@ -77,6 +75,8 @@ private struct ModelsSettingsView: View {
             .textSelection(.enabled)
             .fixedSize(horizontal: false, vertical: true)
         }
+
+        catalogSection
       }
       .padding(.vertical, 4)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -177,6 +177,30 @@ private struct ModelsSettingsView: View {
     return false
   }
 
+  @ViewBuilder
+  private var catalogSection: some View {
+    let activeID = manager.modelName
+    let recommendedID = WhisperModelCatalog.recommended().id
+
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Available Models")
+        .font(.headline)
+      Text("More variants will land here. Switching between them isn't available yet.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+
+      VStack(spacing: 8) {
+        ForEach(WhisperModelCatalog.all) { variant in
+          ModelCatalogRow(
+            variant: variant,
+            isActive: variant.id == activeID,
+            isRecommended: variant.id == recommendedID
+          )
+        }
+      }
+    }
+  }
+
   private var statusColor: Color {
     switch manager.status {
     case .ready: return .green
@@ -184,6 +208,73 @@ private struct ModelsSettingsView: View {
     case .failed: return .red
     case .downloaded: return .yellow
     case .notDownloaded, .unknown: return .secondary
+    }
+  }
+}
+
+private struct ModelCatalogRow: View {
+  let variant: WhisperModelVariant
+  let isActive: Bool
+  let isRecommended: Bool
+
+  private static let sizeFormatter: ByteCountFormatter = {
+    let f = ByteCountFormatter()
+    f.allowedUnits = [.useMB, .useGB]
+    f.countStyle = .file
+    return f
+  }()
+
+  var body: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
+          Text(variant.friendlyName)
+            .font(.body.weight(.semibold))
+          if isActive {
+            badge("Active", tint: .green)
+          }
+          if isRecommended {
+            badge("Recommended", tint: .accentColor)
+          }
+          Spacer()
+          Text(variant.qualityTier.displayName)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+
+        Text(variant.summary)
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+
+        HStack(spacing: 16) {
+          metric("Download", value: Self.sizeFormatter.string(fromByteCount: variant.approxDownloadBytes))
+          metric("RAM", value: Self.sizeFormatter.string(fromByteCount: variant.approxRAMBytes))
+        }
+        .font(.caption)
+      }
+      .padding(6)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+
+  @ViewBuilder
+  private func badge(_ text: String, tint: Color) -> some View {
+    Text(text)
+      .font(.caption2.weight(.semibold))
+      .padding(.horizontal, 6)
+      .padding(.vertical, 2)
+      .background(tint.opacity(0.15), in: Capsule())
+      .foregroundStyle(tint)
+  }
+
+  @ViewBuilder
+  private func metric(_ label: String, value: String) -> some View {
+    HStack(spacing: 4) {
+      Text(label)
+        .foregroundStyle(.secondary)
+      Text(value)
+        .monospacedDigit()
     }
   }
 }
