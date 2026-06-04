@@ -24,6 +24,7 @@ public final class SystemAudioCaptureService: NSObject {
   private var onSample: SampleHandler?
   private let pauseLock = NSLock()
   private var paused = false
+  private var microphoneMuted = false
 
   public var isPaused: Bool {
     get {
@@ -34,6 +35,19 @@ public final class SystemAudioCaptureService: NSObject {
     set {
       pauseLock.lock()
       paused = newValue
+      pauseLock.unlock()
+    }
+  }
+
+  public var isMicrophoneMuted: Bool {
+    get {
+      pauseLock.lock()
+      defer { pauseLock.unlock() }
+      return microphoneMuted
+    }
+    set {
+      pauseLock.lock()
+      microphoneMuted = newValue
       pauseLock.unlock()
     }
   }
@@ -99,6 +113,7 @@ public final class SystemAudioCaptureService: NSObject {
     onLevel = nil
     onSample = nil
     isPaused = false
+    isMicrophoneMuted = false
   }
 
   private func start(_ stream: SCStream) async throws {
@@ -148,10 +163,14 @@ extension SystemAudioCaptureService: SCStreamOutput, SCStreamDelegate {
       return
     }
 
+    let muted = source == .microphone && isMicrophoneMuted
+
     do {
-      let level = try writer?.write(sampleBuffer: sampleBuffer) ?? 0
+      let level = try writer?.write(sampleBuffer: sampleBuffer, muted: muted) ?? 0
       onLevel?(source, level)
-      onSample?(source, sampleBuffer)
+      if !muted {
+        onSample?(source, sampleBuffer)
+      }
     } catch {
       onLevel?(source, 0)
     }

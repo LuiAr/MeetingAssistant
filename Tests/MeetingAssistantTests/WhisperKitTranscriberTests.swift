@@ -83,6 +83,26 @@ struct WhisperKitTranscriberTests {
     #expect(result[0].endTime == 3.0)
   }
 
+  @Test
+  func stripsWhisperSpecialTokens() {
+    let segment = makeSegment(
+      start: 0,
+      end: 1.0,
+      words: [
+        ("<|startoftranscript|>", 0.0, 0.0, 0.5),
+        ("<|en|>", 0.0, 0.0, 0.5),
+        ("Hello", 0.1, 0.4, 0.95),
+        ("there", 0.5, 0.8, 0.93),
+        ("<|endoftext|>", 0.9, 0.9, 0.5),
+      ]
+    )
+
+    let result = WhisperKitTranscriber.mapToTranscriptSegments([segment], source: .system)
+
+    #expect(result.count == 1)
+    #expect(result[0].text == "Hello there")
+  }
+
   private func makeSegment(
     start: Float,
     end: Float,

@@ -91,7 +91,16 @@ public actor WhisperKitTranscriber {
       task: .transcribe,
       language: Self.whisperLanguageCode(from: localeIdentifier),
       temperature: 0.0,
+      // Keep temperature fallback on (defaults: increment 0.2 × 5) so windows that trip the
+      // repetition / low-confidence guards below are re-decoded instead of emitted as-is.
+      skipSpecialTokens: true,
       wordTimestamps: true,
+      // Drop blank/near-silent windows rather than letting the decoder hallucinate text on
+      // them — the leading garbage was coming from the (often silent) microphone track.
+      suppressBlank: true,
+      compressionRatioThreshold: 2.4,
+      logProbThreshold: -1.0,
+      noSpeechThreshold: 0.6,
       chunkingStrategy: .vad
     )
 
@@ -126,14 +135,14 @@ public actor WhisperKitTranscriber {
       if let wordTimings = segment.words, !wordTimings.isEmpty {
         return wordTimings.map { timing in
           WordWithConfidence(
-            text: timing.word.trimmingCharacters(in: .whitespaces),
+            text: stripSpecialTokens(timing.word),
             start: TimeInterval(timing.start),
             end: TimeInterval(timing.end),
             confidence: Double(timing.probability)
           )
         }
       }
-      let trimmed = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+      let trimmed = stripSpecialTokens(segment.text)
       guard !trimmed.isEmpty else { return [] }
       return [
         WordWithConfidence(
@@ -189,6 +198,16 @@ public actor WhisperKitTranscriber {
 
     flush()
     return grouped
+  }
+
+  /// Removes Whisper control tokens such as `<|startoftranscript|>`, `<|en|>`, `<|0.00|>`,
+  /// and `<|endoftext|>` that can leak into decoded text, then trims surrounding whitespace.
+  /// `skipSpecialTokens` in the decode options should prevent these, but this is a cheap
+  /// defense so they never reach the saved transcript.
+  static func stripSpecialTokens(_ text: String) -> String {
+    text
+      .replacingOccurrences(of: "<\\|[^|]*\\|>", with: "", options: .regularExpression)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   static func whisperLanguageCode(from localeIdentifier: String) -> String {

@@ -33,13 +33,6 @@ struct MeetingAssistantApp: App {
       }
     }
 
-    WindowGroup("Recording", id: "recording", for: NewRecordingSession.self) { $session in
-      if let session {
-        RecordingWindowView(session: session)
-      }
-    }
-    .windowResizability(.contentMinSize)
-
     Settings {
       SettingsView()
     }

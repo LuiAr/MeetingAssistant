@@ -42,6 +42,30 @@ public extension CMSampleBuffer {
 }
 
 public extension AVAudioPCMBuffer {
+  /// Overwrites all samples with silence, keeping the frame length intact. Used to record a
+  /// muted microphone as silence without disturbing the timeline.
+  func zeroAudio() {
+    let frameCount = Int(frameLength)
+    let channelCount = Int(format.channelCount)
+    guard frameCount > 0 else { return }
+
+    if let floatChannelData {
+      for channel in 0..<channelCount {
+        floatChannelData[channel].update(repeating: 0, count: frameCount)
+      }
+    }
+    if let int16ChannelData {
+      for channel in 0..<channelCount {
+        int16ChannelData[channel].update(repeating: 0, count: frameCount)
+      }
+    }
+    if let int32ChannelData {
+      for channel in 0..<channelCount {
+        int32ChannelData[channel].update(repeating: 0, count: frameCount)
+      }
+    }
+  }
+
   func normalizedRMSLevel() -> Float {
     guard frameLength > 0 else { return 0 }
 

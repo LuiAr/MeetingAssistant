@@ -3,96 +3,123 @@ import SwiftUI
 struct RecorderPanelView: View {
   var recorder: MeetingRecorder
 
-  @AppStorage("recordingLocaleIdentifier") private var localeIdentifier = Locale.defaultRecordingLocaleIdentifier
-  @AppStorage("selectedMicrophoneDeviceID") private var selectedMicrophoneDeviceID = ""
-  @State private var title = ""
-  @State private var microphones: [MicrophoneDevice] = []
   @State private var modelManager = ModelDownloadManager.shared
   @Environment(\.openSettings) private var openSettings
 
-  var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      HStack(alignment: .firstTextBaseline) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Meeting Recorder")
-            .font(.title3.weight(.semibold))
+  private var isRecordingOrPaused: Bool {
+    recorder.status == .recording || recorder.status == .paused
+  }
 
+  var body: some View {
+    VStack(spacing: 28) {
+      Spacer(minLength: 24)
+
+      statusIcon
+
+      VStack(spacing: 10) {
+        Text(displayTitle)
+          .font(.title2.weight(.semibold))
+          .lineLimit(2)
+          .multilineTextAlignment(.center)
+
+        Text(TimecodeFormatter.string(from: recorder.activeElapsed))
+          .font(.system(size: 56, weight: .semibold, design: .rounded))
+          .monospacedDigit()
+          .foregroundStyle(isRecordingOrPaused ? .primary : .secondary)
+
+        if recorder.status == .finalizing {
+          TranscribingIndicator()
+            .padding(.top, 6)
+        } else {
           HStack(spacing: 8) {
             Circle()
               .fill(statusColor)
               .frame(width: 8, height: 8)
-            Text(recorder.status.displayName)
-              .foregroundStyle(.secondary)
-            Text(TimecodeFormatter.string(from: recorder.activeElapsed))
-              .monospacedDigit()
+            Text(statusLabel)
               .foregroundStyle(.secondary)
           }
           .font(.callout)
         }
+      }
 
-        Spacer()
+      if isRecordingOrPaused {
+        HStack(spacing: 20) {
+          LevelMeterView(title: "Computer", level: recorder.levels.system)
+          LevelMeterView(title: "Mic", level: recorder.levels.microphone)
+        }
 
         controlButtons
+          .padding(.top, 4)
       }
-
-      Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 10) {
-        GridRow {
-          Text("Title")
-            .foregroundStyle(.secondary)
-          TextField("Meeting title", text: $title)
-            .textFieldStyle(.roundedBorder)
-        }
-
-        GridRow {
-          Text("Microphone")
-            .foregroundStyle(.secondary)
-          Picker("Microphone", selection: $selectedMicrophoneDeviceID) {
-            Text("System Default").tag("")
-            ForEach(microphones) { microphone in
-              Text(microphone.name).tag(microphone.id)
-            }
-          }
-          .labelsHidden()
-          .frame(maxWidth: 360)
-        }
-
-        GridRow {
-          Text("Locale")
-            .foregroundStyle(.secondary)
-          TextField("Locale", text: $localeIdentifier)
-            .textFieldStyle(.roundedBorder)
-            .frame(maxWidth: 180)
-        }
-      }
-
-      HStack(spacing: 18) {
-        LevelMeterView(title: "Computer", level: recorder.levels.system)
-        LevelMeterView(title: "Mic", level: recorder.levels.microphone)
-      }
-
-      LiveTranscriptStrip(segments: recorder.liveTranscript)
 
       if !isModelReady {
         ModelNotReadyBanner(status: modelManager.status) {
           openSettings()
         }
-      }
-
-      if let progress = recorder.transcriptionProgress {
-        TranscriptionProgressBanner(progress: progress)
+        .frame(maxWidth: 420)
       }
 
       if let errorMessage = recorder.errorMessage {
         Text(errorMessage)
           .font(.callout)
           .foregroundStyle(.red)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: 420)
           .textSelection(.enabled)
       }
+
+      Spacer(minLength: 24)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .padding(40)
     .task {
-      microphones = MicrophoneDeviceProvider.devices()
       modelManager.refreshStatus()
     }
+  }
+
+  @ViewBuilder
+  private var statusIcon: some View {
+    switch recorder.status {
+    case .recording:
+      Image(systemName: "record.circle.fill")
+        .font(.system(size: 68))
+        .foregroundStyle(.red)
+        .symbolEffect(.pulse, options: .repeating)
+    case .paused:
+      Image(systemName: "pause.circle.fill")
+        .font(.system(size: 68))
+        .foregroundStyle(.orange)
+    case .finalizing, .requestingPermissions:
+      ProgressView()
+        .controlSize(.large)
+        .frame(height: 68)
+    default:
+      Image(systemName: "waveform")
+        .font(.system(size: 68))
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  private var statusLabel: String {
+    switch recorder.status {
+    case .requestingPermissions:
+      return "Requesting permissions…"
+    case .finalizing:
+      return "Saving & transcribing…"
+    default:
+      return recorder.status.displayName
+    }
+  }
+
+  private var displayTitle: String {
+    // While permissions are still being requested the draft for this recording doesn't
+    // exist yet, so `currentDocument` may still point at the previous recording. Show a
+    // neutral title until the new draft is created.
+    guard recorder.status != .requestingPermissions else { return "Recording" }
+    let trimmed = (recorder.currentDocument?.metadata.title ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "Recording" : trimmed
   }
 
   private var isModelReady: Bool {
@@ -101,53 +128,49 @@ struct RecorderPanelView: View {
 
   @ViewBuilder
   private var controlButtons: some View {
-    HStack(spacing: 8) {
+    HStack(spacing: 14) {
       Button {
-        Task {
-          await recorder.startRecording(
-            title: title,
-            localeIdentifier: localeIdentifier,
-            microphoneDeviceID: selectedMicrophoneDeviceID.isEmpty ? nil : selectedMicrophoneDeviceID
-          )
+        recorder.setMicrophoneMuted(!recorder.isMicrophoneMuted)
+      } label: {
+        Label(
+          recorder.isMicrophoneMuted ? "Unmute Mic" : "Mute Mic",
+          systemImage: recorder.isMicrophoneMuted ? "mic.slash.fill" : "mic.fill"
+        )
+        .frame(minWidth: 90)
+      }
+      .controlSize(.large)
+      .tint(recorder.isMicrophoneMuted ? .red : nil)
+      .help("Mute your microphone — it is recorded as silence while muted")
+
+      if recorder.status == .paused {
+        Button {
+          recorder.resume()
+        } label: {
+          Label("Resume", systemImage: "play.fill")
+            .frame(minWidth: 90)
         }
-      } label: {
-        Label("Record", systemImage: "record.circle")
+        .controlSize(.large)
+      } else {
+        Button {
+          recorder.pause()
+        } label: {
+          Label("Pause", systemImage: "pause.fill")
+            .frame(minWidth: 90)
+        }
+        .controlSize(.large)
       }
-      .buttonStyle(.borderedProminent)
-      .disabled(!canRecord || !isModelReady)
-      .help(isModelReady ? "" : "Download the Whisper model in Settings before recording.")
-
-      Button {
-        recorder.pause()
-      } label: {
-        Label("Pause", systemImage: "pause.fill")
-      }
-      .disabled(recorder.status != .recording)
-
-      Button {
-        recorder.resume()
-      } label: {
-        Label("Resume", systemImage: "play.fill")
-      }
-      .disabled(recorder.status != .paused)
 
       Button {
         Task {
           await recorder.stop()
         }
       } label: {
-        Label("Stop", systemImage: "stop.fill")
+        Label("Stop & Save", systemImage: "stop.fill")
+          .frame(minWidth: 110)
       }
-      .disabled(recorder.status != .recording && recorder.status != .paused)
-    }
-  }
-
-  private var canRecord: Bool {
-    switch recorder.status {
-    case .idle, .completed, .failed:
-      return true
-    default:
-      return false
+      .controlSize(.large)
+      .buttonStyle(.borderedProminent)
+      .tint(.red)
     }
   }
 
@@ -167,70 +190,40 @@ struct RecorderPanelView: View {
   }
 }
 
-private struct TranscriptionProgressBanner: View {
-  var progress: WhisperTranscriptionProgress
+/// Shown while the recording is being saved and transcribed. The percentage WhisperKit
+/// reports per window is unreliable, so instead of a progress bar this cycles through
+/// reassuring messages with a soft pulsing glow.
+private struct TranscribingIndicator: View {
+  private static let messages = [
+    "Hang tight — transcribing your meeting…",
+    "Working through the audio…",
+    "This can take a moment…",
+    "Almost there…",
+    "Polishing the transcript…"
+  ]
+
+  @State private var index = 0
+  @State private var glow = false
 
   var body: some View {
-    HStack(spacing: 10) {
-      ProgressView(value: fractionValue)
-        .progressViewStyle(.linear)
-        .frame(maxWidth: 220)
-      Text(label)
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-      Spacer()
-    }
-    .padding(.vertical, 6)
-    .padding(.horizontal, 10)
-    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
-  }
-
-  private var fractionValue: Double? {
-    switch progress.phase {
-    case .downloadingModel(let fraction):
-      return fraction
-    case .loadingModel:
-      return nil
-    case .transcribing(let fraction):
-      return fraction
-    }
-  }
-
-  private var label: String {
-    switch progress.phase {
-    case .downloadingModel(let fraction):
-      return "Downloading Whisper model — \(Int(fraction * 100))%"
-    case .loadingModel:
-      return "Loading Whisper model…"
-    case .transcribing(let fraction):
-      return "Transcribing — \(Int(fraction * 100))%"
-    }
-  }
-}
-
-private struct LiveTranscriptStrip: View {
-  var segments: [TranscriptSegment]
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      Text("Live Transcript")
-        .font(.caption.weight(.semibold))
-        .foregroundStyle(.secondary)
-
-      if segments.isEmpty {
-        Text("Transcript is generated from the saved audio after you stop recording.")
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-      } else {
-        ForEach(segments.suffix(3)) { segment in
-          Text("[\(TimecodeFormatter.string(from: segment.startTime))] \(segment.speaker.rawValue): \(segment.text)")
-            .lineLimit(1)
-            .textSelection(.enabled)
+    Text(Self.messages[index])
+      .font(.headline)
+      .foregroundStyle(.tint)
+      .contentTransition(.opacity)
+      .multilineTextAlignment(.center)
+      .shadow(color: .accentColor.opacity(glow ? 0.7 : 0.12), radius: glow ? 11 : 2)
+      .opacity(glow ? 1.0 : 0.7)
+      .animation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true), value: glow)
+      .frame(maxWidth: 420)
+      .onAppear { glow = true }
+      .task {
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(3))
+          withAnimation(.easeInOut(duration: 0.45)) {
+            index = (index + 1) % Self.messages.count
+          }
         }
       }
-    }
-    .font(.callout)
   }
 }
 

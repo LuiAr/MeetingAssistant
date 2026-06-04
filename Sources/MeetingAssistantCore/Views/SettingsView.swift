@@ -8,11 +8,52 @@ public struct SettingsView: View {
     TabView {
       ModelsSettingsView()
         .tabItem {
-          Label("Models", systemImage: "waveform.badge.gearshape")
+          Label("Models", systemImage: "sparkles")
+        }
+      AudioSettingsView()
+        .tabItem {
+          Label("Audio", systemImage: "mic")
         }
     }
     .frame(width: 620, height: 460)
     .scenePadding()
+  }
+}
+
+private struct AudioSettingsView: View {
+  @AppStorage("selectedMicrophoneDeviceID") private var selectedMicrophoneDeviceID = ""
+  @State private var microphones: [MicrophoneDevice] = []
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Microphone")
+            .font(.title2.weight(.semibold))
+          Text("Choose which input device is captured alongside the computer audio while recording.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 14) {
+            Picker("Input device", selection: $selectedMicrophoneDeviceID) {
+              Text("System Default").tag("")
+              ForEach(microphones) { microphone in
+                Text(microphone.name).tag(microphone.id)
+              }
+            }
+          }
+          .padding(8)
+        }
+      }
+      .padding(.vertical, 4)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .task {
+      microphones = MicrophoneDeviceProvider.devices()
+    }
   }
 }
 

@@ -19,10 +19,13 @@ public struct ContentView: View {
       .searchable(text: $searchText, placement: .sidebar)
       .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
     } detail: {
-      if let selectedRecording {
+      if recorderIsActive {
+        RecorderPanelView(recorder: session.recorder)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else if let selectedRecording {
         RecordingDetailView(metadata: selectedRecording, store: session.store)
       } else {
-        NewRecordingLandingView()
+        NewRecordingLandingView(selection: $selectedRecordingID)
       }
     }
     .toolbar {
@@ -60,6 +63,20 @@ public struct ContentView: View {
     session.store.recordings.first { $0.id == selectedRecordingID }
   }
 
+  /// True while a recording is being set up or captured, so the detail pane shows the live
+  /// recorder screen. Because `startRecording` flips the status to `.requestingPermissions`
+  /// synchronously (before its first await), this turns true the instant Start is tapped, so
+  /// the recording page opens immediately. It flips back to false once the recorder reaches
+  /// `.completed`/`.failed`, revealing the selected recording's transcript.
+  private var recorderIsActive: Bool {
+    switch session.recorder.status {
+    case .requestingPermissions, .recording, .paused, .finalizing:
+      return true
+    default:
+      return false
+    }
+  }
+
   private var filteredRecordings: [RecordingMetadata] {
     let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else { return session.store.recordings }
@@ -72,13 +89,13 @@ public struct ContentView: View {
 }
 
 private struct NewRecordingLandingView: View {
-  @AppStorage("recordingLocaleIdentifier") private var localeIdentifier = Locale.defaultRecordingLocaleIdentifier
+  @Binding var selection: UUID?
+
   @AppStorage("selectedMicrophoneDeviceID") private var selectedMicrophoneDeviceID = ""
   @State private var title = ""
   @State private var modelManager = ModelDownloadManager.shared
   @State private var recorder = AppSession.shared.recorder
   @Environment(\.openSettings) private var openSettings
-  @Environment(\.openWindow) private var openWindow
   @FocusState private var titleFocused: Bool
 
   var body: some View {
@@ -125,6 +142,16 @@ private struct NewRecordingLandingView: View {
         .buttonStyle(.link)
       }
 
+      if let errorMessage = recorder.errorMessage {
+        Text(errorMessage)
+          .font(.callout)
+          .foregroundStyle(.red)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: 420)
+          .textSelection(.enabled)
+      }
+
       Spacer()
     }
     .padding(.horizontal, 40)
@@ -151,13 +178,19 @@ private struct NewRecordingLandingView: View {
 
   private func start() {
     guard canStart else { return }
-    let session = NewRecordingSession(
-      title: title,
-      localeIdentifier: localeIdentifier,
-      microphoneDeviceID: selectedMicrophoneDeviceID.isEmpty ? nil : selectedMicrophoneDeviceID
-    )
-    openWindow(id: "recording", value: session)
-    // Clear the field so the next landing visit starts blank.
-    title = ""
+    let microphoneDeviceID = selectedMicrophoneDeviceID.isEmpty ? nil : selectedMicrophoneDeviceID
+    Task {
+      await recorder.startRecording(
+        title: title,
+        localeIdentifier: Locale.defaultRecordingLocaleIdentifier,
+        microphoneDeviceID: microphoneDeviceID
+      )
+      // Only switch to the live view if the recording actually began. A failed start
+      // (e.g. denied permission) leaves us on the landing view with the error shown.
+      if recorder.status == .recording, let id = recorder.currentDocument?.metadata.id {
+        selection = id
+        title = ""
+      }
+    }
   }
 }

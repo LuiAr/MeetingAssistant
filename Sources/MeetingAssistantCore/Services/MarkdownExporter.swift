@@ -76,16 +76,104 @@ public enum MarkdownExporter {
     return lines.joined(separator: "\n")
   }
 
-  public static func aiContext(for document: RecordingDocument) -> String {
+  /// The transcript on its own — the timecoded speaker lines, with no frontmatter,
+  /// metadata, files, or pauses. Used for the in-app transcript view and "Copy only
+  /// transcript".
+  public static func transcript(for document: RecordingDocument) -> String {
+    let compactedTranscript = PauseCompactor.compact(document.transcript, pauses: document.pauses)
+      .sorted { $0.startTime < $1.startTime }
+
+    let entries: [String] = compactedTranscript.compactMap { segment in
+      let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !text.isEmpty else { return nil }
+      let timecode = TimecodeFormatter.string(from: segment.startTime)
+      return "[\(timecode)] \(segment.speaker.rawValue): \(text)"
+    }
+
+    guard !entries.isEmpty else {
+      return "No transcript text was produced."
+    }
+    return entries.joined(separator: "\n\n")
+  }
+
+  /// Which pieces of metadata are prepended to the transcript when building the AI context.
+  /// The title and the transcript itself are always included.
+  public struct AIContextOptions: Sendable, Equatable {
+    public var includeDate: Bool
+    public var includeDuration: Bool
+    public var includeLocale: Bool
+    public var includeStatus: Bool
+    public var includeFiles: Bool
+    public var includePauses: Bool
+
+    public init(
+      includeDate: Bool = true,
+      includeDuration: Bool = true,
+      includeLocale: Bool = false,
+      includeStatus: Bool = false,
+      includeFiles: Bool = false,
+      includePauses: Bool = false
+    ) {
+      self.includeDate = includeDate
+      self.includeDuration = includeDuration
+      self.includeLocale = includeLocale
+      self.includeStatus = includeStatus
+      self.includeFiles = includeFiles
+      self.includePauses = includePauses
+    }
+  }
+
+  public static func aiContext(
+    for document: RecordingDocument,
+    options: AIContextOptions = AIContextOptions()
+  ) -> String {
     let metadata = document.metadata
     var lines: [String] = []
     lines.append("Meeting: \(metadata.title)")
-    lines.append("Date: \(metadata.startedAt.formatted(date: .abbreviated, time: .shortened))")
-    lines.append("Duration: \(TimecodeFormatter.string(from: metadata.activeDuration))")
+
+    if options.includeDate {
+      lines.append("Date: \(metadata.startedAt.formatted(date: .abbreviated, time: .shortened))")
+      if let endedAt = metadata.endedAt {
+        lines.append("Ended: \(endedAt.formatted(date: .abbreviated, time: .shortened))")
+      }
+    }
+    if options.includeDuration {
+      lines.append("Duration: \(TimecodeFormatter.string(from: metadata.activeDuration))")
+    }
+    if options.includeLocale {
+      lines.append("Locale: \(metadata.localeIdentifier)")
+    }
+    if options.includeStatus {
+      lines.append("Status: \(metadata.status.rawValue)")
+    }
+    if options.includeFiles {
+      var files: [String] = ["transcript: \(metadata.transcriptFileName)"]
+      if let systemAudioFileName = metadata.systemAudioFileName {
+        files.append("computer audio: \(systemAudioFileName)")
+      }
+      if let microphoneAudioFileName = metadata.microphoneAudioFileName {
+        files.append("microphone: \(microphoneAudioFileName)")
+      }
+      if let mixedAudioFileName = metadata.mixedAudioFileName {
+        files.append("mixed audio: \(mixedAudioFileName)")
+      }
+      lines.append("Files: \(files.joined(separator: ", "))")
+    }
+    if options.includePauses {
+      if document.pauses.isEmpty {
+        lines.append("Pauses: none")
+      } else {
+        let pauses = document.pauses.map { pause in
+          "\(TimecodeFormatter.string(from: pause.startOffset))-\(TimecodeFormatter.string(from: pause.endOffset))"
+        }
+        lines.append("Pauses: \(pauses.joined(separator: ", "))")
+      }
+    }
+
     lines.append("")
     lines.append("Transcript:")
     lines.append("")
-    lines.append(markdown(for: document))
+    lines.append(transcript(for: document))
     return lines.joined(separator: "\n")
   }
 

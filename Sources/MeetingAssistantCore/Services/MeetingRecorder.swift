@@ -9,6 +9,7 @@ public final class MeetingRecorder {
   public private(set) var activeElapsed: TimeInterval = 0
   public private(set) var levels = AudioLevelSnapshot()
   public private(set) var liveTranscript: [TranscriptSegment] = []
+  public private(set) var isMicrophoneMuted = false
   public private(set) var currentDocument: RecordingDocument?
   public private(set) var errorMessage: String?
   public private(set) var transcriptionProgress: WhisperTranscriptionProgress?
@@ -53,6 +54,7 @@ public final class MeetingRecorder {
       var document = try store.createDraft(title: resolvedTitle, localeIdentifier: localeIdentifier, startedAt: startedAt)
       currentDocument = document
       liveTranscript = []
+      isMicrophoneMuted = false
       levels = AudioLevelSnapshot()
       errorMessage = nil
       stateMachine.start(at: startedAt)
@@ -105,6 +107,14 @@ public final class MeetingRecorder {
       currentDocument = document
     }
     publishState()
+  }
+
+  /// Mutes or unmutes the microphone mid-recording. Muted audio is written to the mic track
+  /// as silence (preserving the timeline) so it is not transcribed.
+  public func setMicrophoneMuted(_ muted: Bool) {
+    guard status == .recording || status == .paused else { return }
+    isMicrophoneMuted = muted
+    captureService?.isMicrophoneMuted = muted
   }
 
   public func stop() async {
@@ -270,6 +280,7 @@ public final class MeetingRecorder {
   private func resetAfterStop(keepDocument: Bool = false) {
     captureService = nil
     levels = AudioLevelSnapshot()
+    isMicrophoneMuted = false
     if !keepDocument {
       currentDocument = nil
       liveTranscript = []
