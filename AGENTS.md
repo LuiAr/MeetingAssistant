@@ -4,6 +4,9 @@
 
 MeetingAssistant is a SwiftPM-based native macOS app. The executable target is intentionally small and delegates application UI and behavior to `MeetingAssistantCore` so models, stores, formatting, and state transitions are testable.
 
+## Rules for Claude or Codex
+- After I ask you to do anything on the project please always ask questions that would help you make sure you understood how things should be implemented.
+
 ## Build And Run
 
 - Use `./script/build_and_run.sh` as the primary local entrypoint.

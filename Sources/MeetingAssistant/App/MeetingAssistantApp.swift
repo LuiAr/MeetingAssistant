@@ -24,6 +24,11 @@ struct MeetingAssistantApp: App {
           .frame(minWidth: 980, minHeight: 640)
       }
     }
+    // Clamp the window's minimum size to the content's minimum so it can't be
+    // resized shorter than 640pt. Without this, the window could shrink below the
+    // content's min height; SwiftUI then keeps the content at 640pt and centers the
+    // overflow, sliding the top (sidebar search field) up under the title bar.
+    .windowResizability(.contentMinSize)
     .commands {
       CommandGroup(after: .newItem) {
         Button("Refresh Recordings") {

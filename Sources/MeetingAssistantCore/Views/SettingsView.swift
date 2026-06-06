@@ -187,12 +187,6 @@ private struct ModelsSettingsView: View {
           Label("Cancel", systemImage: "xmark.circle")
         }
       case .downloaded:
-        Button {
-          manager.startDownload()
-        } label: {
-          Label("Load Model", systemImage: "play.circle")
-        }
-        .buttonStyle(.borderedProminent)
         Button("Delete", role: .destructive) {
           showDeleteConfirm = true
         }
@@ -247,7 +241,7 @@ private struct ModelsSettingsView: View {
     case .ready: return .green
     case .downloading, .loading, .waitingForNetwork: return .orange
     case .failed: return .red
-    case .downloaded: return .yellow
+    case .downloaded: return .green
     case .notDownloaded, .unknown: return .secondary
     }
   }

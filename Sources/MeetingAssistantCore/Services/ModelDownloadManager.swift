@@ -39,7 +39,7 @@ public enum ModelStatus: Sendable, Equatable {
     case .waitingForNetwork(let attempt):
       return attempt > 1 ? "Waiting for internet (retry \(attempt - 1))" : "Waiting for internet"
     case .downloaded:
-      return "Downloaded — not yet loaded"
+      return "Downloaded"
     case .loading:
       return "Loading model…"
     case .ready:

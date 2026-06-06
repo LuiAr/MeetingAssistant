@@ -99,6 +99,27 @@ public final class RecordingStore {
     NSWorkspace.shared.activateFileViewerSelecting([transcriptURL(for: metadata)])
   }
 
+  /// Renames a recording. Persisting rewrites both `recording.json` and the transcript
+  /// Markdown (which embeds the title) and refreshes the in-memory list. The on-disk
+  /// folder name is derived from the original date/id, so it intentionally does not change.
+  public func rename(_ metadata: RecordingMetadata, to newTitle: String) throws {
+    let trimmed = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, trimmed != metadata.title else { return }
+    var document = try document(for: metadata)
+    document.metadata.title = trimmed
+    try persist(document)
+  }
+
+  /// Permanently deletes a recording's folder (audio + transcript + metadata) and removes
+  /// it from the in-memory list.
+  public func delete(_ metadata: RecordingMetadata) throws {
+    let directory = recordingDirectory(for: metadata)
+    if fileManager.fileExists(atPath: directory.path) {
+      try fileManager.removeItem(at: directory)
+    }
+    recordings.removeAll { $0.id == metadata.id }
+  }
+
   private func ensureRootDirectory() throws {
     try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
   }
