@@ -15,33 +15,16 @@ public struct ContentView: View {
   public init() {}
 
   public var body: some View {
-    NavigationSplitView(columnVisibility: .constant(.all)) {
-      SidebarView(
-        recordings: filteredRecordings,
-        selection: $selectedRecordingID,
-        searchText: $searchText,
-        store: session.store
-      )
-      .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
-      .toolbar(removing: .sidebarToggle)
-    } detail: {
-      if recorderIsActive {
-        RecorderPanelView(recorder: session.recorder)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .navigationTitle("Recording")
-      } else if let selectedRecording {
-        RecordingDetailView(metadata: selectedRecording, store: session.store)
+    Group {
+      if showsNewMeetingLanding {
+        NewRecordingLandingView(
+          selection: $selectedRecordingID,
+          recentRecordings: recentRecordings,
+          onSelectRecording: selectRecording
+        )
+        .navigationTitle("MeetingAssistant")
       } else {
-        NewRecordingLandingView(selection: $selectedRecordingID)
-          .navigationTitle("MeetingAssistant")
-      }
-    }
-    // Each detail state sets its own navigation title so the window title reflects the
-    // current view (the meeting title, "Recording", or the app name on the landing view).
-    .inspector(isPresented: inspectorPresented) {
-      if let selectedRecording, !recorderIsActive {
-        RecordingInfoPanel(metadata: selectedRecording, store: session.store)
-          .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
+        libraryView
       }
     }
     .toolbar {
@@ -59,17 +42,28 @@ public struct ContentView: View {
         ToolbarSpacer(.fixed)
       }
 
-      // 2. New meeting + Settings — always available, grouped together.
-      ToolbarItem(placement: .primaryAction) {
-        Button {
-          selectedRecordingID = nil
-        } label: {
-          Label("New meeting", systemImage: "plus.circle")
-            .labelStyle(.titleAndIcon)
+      // 2. Library + New meeting + Settings — grouped on the right.
+      if showsNewMeetingLanding {
+        ToolbarItem(placement: .primaryAction) {
+          Button(action: goToLibrary) {
+            Label("Library", systemImage: "books.vertical.fill")
+              .labelStyle(.titleAndIcon)
+          }
+          .disabled(mostRecentRecording == nil)
+          .help(mostRecentRecording == nil ? "No saved meetings yet" : "Open Library")
         }
-        .help("Start a new meeting (⌘N)")
-        .keyboardShortcut("n", modifiers: [.command])
-        .disabled(selectedRecordingID == nil)
+      }
+      if !showsNewMeetingLanding {
+        ToolbarItem(placement: .primaryAction) {
+          Button {
+            selectedRecordingID = nil
+          } label: {
+            Label("New meeting", systemImage: "plus.circle")
+              .labelStyle(.titleAndIcon)
+          }
+          .help("Start a new meeting (⌘N)")
+          .keyboardShortcut("n", modifiers: [.command])
+        }
       }
       ToolbarItem(placement: .primaryAction) {
         Button {
@@ -92,6 +86,12 @@ public struct ContentView: View {
               Label("Reveal folder", systemImage: "folder")
             }
             Button {
+              revealSelectedAudioFiles()
+            } label: {
+              Label("Reveal audio files", systemImage: "waveform")
+            }
+            .disabled(!selectedRecordingHasAudio)
+            Button {
               copyTranscriptOnly()
             } label: {
               Label("Copy only transcript", systemImage: "doc.on.doc")
@@ -99,7 +99,7 @@ public struct ContentView: View {
           } label: {
             Label("More", systemImage: "ellipsis.circle")
           }
-          .help("More actions — reveal folder, copy transcript")
+          .help("More actions — reveal audio or folder, copy transcript")
         }
         ToolbarSpacer(.fixed)
         ToolbarItem(placement: .primaryAction) {
@@ -135,8 +135,49 @@ public struct ContentView: View {
     }
   }
 
+  private var libraryView: some View {
+    NavigationSplitView(columnVisibility: .constant(.all)) {
+      SidebarView(
+        recordings: filteredRecordings,
+        selection: $selectedRecordingID,
+        searchText: $searchText,
+        store: session.store
+      )
+      .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
+      .toolbar(removing: .sidebarToggle)
+    } detail: {
+      if recorderIsActive {
+        RecorderPanelView(recorder: session.recorder)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .navigationTitle("Recording")
+      } else if let selectedRecording {
+        RecordingDetailView(metadata: selectedRecording, store: session.store)
+      } else {
+        ContentUnavailableView("No Meeting Selected", systemImage: "doc.text")
+      }
+    }
+    .inspector(isPresented: inspectorPresented) {
+      if let selectedRecording, !recorderIsActive {
+        RecordingInfoPanel(metadata: selectedRecording, store: session.store)
+          .inspectorColumnWidth(min: 260, ideal: 300, max: 380)
+      }
+    }
+  }
+
   private var selectedRecording: RecordingMetadata? {
     session.store.recordings.first { $0.id == selectedRecordingID }
+  }
+
+  private var mostRecentRecording: RecordingMetadata? {
+    session.store.recordings.first
+  }
+
+  private var recentRecordings: [RecordingMetadata] {
+    Array(session.store.recordings.prefix(3))
+  }
+
+  private var showsNewMeetingLanding: Bool {
+    selectedRecordingID == nil && !recorderIsActive
   }
 
   /// Drives the info inspector. It auto-closes whenever there is no selected recording or a
@@ -208,6 +249,24 @@ public struct ContentView: View {
     session.store.revealInFinder(metadata)
   }
 
+  private func revealSelectedAudioFiles() {
+    guard let metadata = selectedRecording else { return }
+    session.store.revealAudioFiles(metadata)
+  }
+
+  private func goToLibrary() {
+    selectedRecordingID = mostRecentRecording?.id
+  }
+
+  private func selectRecording(_ id: UUID) {
+    selectedRecordingID = id
+  }
+
+  private var selectedRecordingHasAudio: Bool {
+    guard let metadata = selectedRecording else { return false }
+    return session.store.hasAudioFiles(for: metadata)
+  }
+
   /// Reads the "Include in AI Context" toggles from defaults. `UserDefaults.bool` returns
   /// false for unset keys, but date and duration default to true, so each flag falls back
   /// to its real default when the key has never been written.
@@ -241,6 +300,8 @@ public struct ContentView: View {
 
 private struct NewRecordingLandingView: View {
   @Binding var selection: UUID?
+  var recentRecordings: [RecordingMetadata]
+  var onSelectRecording: (UUID) -> Void
 
   @AppStorage("selectedMicrophoneDeviceID") private var selectedMicrophoneDeviceID = ""
   @State private var title = ""
@@ -284,6 +345,17 @@ private struct NewRecordingLandingView: View {
         .keyboardShortcut(.defaultAction)
         .disabled(!canStart)
         .help(canStart ? "" : (modelOnDisk ? "" : "Download the Whisper model in Settings before recording."))
+      }
+
+      if !recentRecordings.isEmpty {
+        RecentMeetingsStackView(
+          recordings: recentRecordings,
+          onSelect: onSelectRecording,
+          onOpenLibrary: {
+            guard let mostRecentRecording = recentRecordings.first else { return }
+            onSelectRecording(mostRecentRecording.id)
+          }
+        )
       }
 
       if !modelOnDisk {

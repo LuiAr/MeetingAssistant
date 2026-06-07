@@ -203,6 +203,13 @@ struct SidebarView: View {
     }
 
     Button {
+      store.revealAudioFiles(recording)
+    } label: {
+      Label("Reveal audio files", systemImage: "waveform")
+    }
+    .disabled(!store.hasAudioFiles(for: recording))
+
+    Button {
       exportMarkdown(recording)
     } label: {
       Label("Export Markdown…", systemImage: "square.and.arrow.up")

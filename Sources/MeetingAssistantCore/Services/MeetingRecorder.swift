@@ -149,6 +149,7 @@ public final class MeetingRecorder {
       currentDocument = document
       stateMachine.complete()
       publishState()
+      try? store.applyConfiguredAudioCleanupIfNeeded()
     } catch {
       stateMachine.fail(error.localizedDescription)
       errorMessage = error.localizedDescription

@@ -24,6 +24,7 @@ struct MeetingAssistantApp: App {
           .frame(minWidth: 980, minHeight: 640)
       }
     }
+    .defaultSize(width: 1100, height: 700)
     // Clamp the window's minimum size to the content's minimum so it can't be
     // resized shorter than 640pt. Without this, the window could shrink below the
     // content's min height; SwiftUI then keeps the content at 640pt and centers the
@@ -60,4 +61,3 @@ private enum AppLaunchMode {
     return .smokeRecord(seconds: max(1, min(30, seconds)))
   }
 }
-

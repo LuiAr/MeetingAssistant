@@ -11,6 +11,7 @@ public final class RecordingStore {
   }
 
   public private(set) var recordings: [RecordingMetadata] = []
+  public private(set) var audioStorageBytes: Int64 = 0
   public var rootDirectory: URL
 
   private let fileManager: FileManager
@@ -40,7 +41,11 @@ public final class RecordingStore {
         .sorted { $0.startedAt > $1.startedAt }
     } catch {
       recordings = []
+      audioStorageBytes = 0
+      return
     }
+
+    try? applyConfiguredAudioCleanupIfNeeded()
   }
 
   public func createDraft(title: String, localeIdentifier: String, startedAt: Date = Date()) throws -> RecordingDocument {
@@ -75,6 +80,7 @@ public final class RecordingStore {
     try markdown.write(to: transcriptURL, atomically: true, encoding: .utf8)
 
     upsert(document.metadata)
+    refreshAudioStorageBytes()
   }
 
   public func document(for metadata: RecordingMetadata) throws -> RecordingDocument {
@@ -99,6 +105,75 @@ public final class RecordingStore {
     NSWorkspace.shared.activateFileViewerSelecting([transcriptURL(for: metadata)])
   }
 
+  public func audioURLs(for metadata: RecordingMetadata) -> [URL] {
+    let directory = recordingDirectory(for: metadata)
+    let fileNames = [
+      metadata.mixedAudioFileName,
+      metadata.systemAudioFileName,
+      metadata.microphoneAudioFileName
+    ]
+
+    return fileNames.compactMap { fileName in
+      guard let fileName else { return nil }
+      let url = directory.appendingPathComponent(fileName)
+      return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+  }
+
+  public func revealAudioFiles(_ metadata: RecordingMetadata) {
+    let urls = audioURLs(for: metadata)
+    guard !urls.isEmpty else { return }
+    NSWorkspace.shared.activateFileViewerSelecting(urls)
+  }
+
+  public func hasAudioFiles(for metadata: RecordingMetadata) -> Bool {
+    !audioURLs(for: metadata).isEmpty
+  }
+
+  public func applyConfiguredAudioCleanupIfNeeded(now: Date = Date()) throws {
+    try applyAudioCleanup(
+      policy: AudioStoragePreferences.policy(),
+      storageLimitBytes: AudioStoragePreferences.storageLimitBytes(),
+      now: now
+    )
+  }
+
+  public func applyAudioCleanup(
+    policy: AudioRetentionPolicy,
+    storageLimitBytes: Int64 = Int64(AudioStoragePreferences.defaultStorageLimitBytes),
+    now: Date = Date()
+  ) throws {
+    let documents = try loadDocuments()
+
+    switch policy {
+    case .never:
+      break
+    case .after7Days, .after30Days, .after90Days:
+      guard let days = policy.ageInDays,
+            let cutoff = Calendar.current.date(byAdding: .day, value: -days, to: now) else { break }
+      for document in documents where cleanupDate(for: document.metadata) < cutoff {
+        try deleteAudioFiles(for: document)
+      }
+    case .storageLimit:
+      var remainingBytes = documents.reduce(Int64.zero) {
+        $0 + audioStorageBytes(for: $1.metadata)
+      }
+      let limit = max(0, storageLimitBytes)
+      let candidates = documents
+        .filter { isEligibleForAudioCleanup($0.metadata) }
+        .sorted(by: {
+        cleanupDate(for: $0.metadata) < cleanupDate(for: $1.metadata)
+      })
+      for document in candidates where remainingBytes > limit {
+        let bytes = audioStorageBytes(for: document.metadata)
+        try deleteAudioFiles(for: document)
+        remainingBytes -= bytes
+      }
+    }
+
+    refreshAudioStorageBytes()
+  }
+
   /// Renames a recording. Persisting rewrites both `recording.json` and the transcript
   /// Markdown (which embeds the title) and refreshes the in-memory list. The on-disk
   /// folder name is derived from the original date/id, so it intentionally does not change.
@@ -118,6 +193,7 @@ public final class RecordingStore {
       try fileManager.removeItem(at: directory)
     }
     recordings.removeAll { $0.id == metadata.id }
+    refreshAudioStorageBytes()
   }
 
   private func ensureRootDirectory() throws {
@@ -136,6 +212,46 @@ public final class RecordingStore {
       let jsonURL = directory.appendingPathComponent("recording.json")
       guard let data = try? Data(contentsOf: jsonURL) else { return nil }
       return try? jsonDecoder.decode(RecordingDocument.self, from: data)
+    }
+  }
+
+  private func deleteAudioFiles(for originalDocument: RecordingDocument) throws {
+    guard isEligibleForAudioCleanup(originalDocument.metadata) else { return }
+    var document = originalDocument
+
+    for url in audioURLs(for: document.metadata) {
+      try fileManager.removeItem(at: url)
+    }
+
+    document.metadata.systemAudioFileName = nil
+    document.metadata.microphoneAudioFileName = nil
+    document.metadata.mixedAudioFileName = nil
+    try persist(document)
+  }
+
+  private func isEligibleForAudioCleanup(_ metadata: RecordingMetadata) -> Bool {
+    switch metadata.status {
+    case .recording, .paused, .requestingPermissions, .finalizing:
+      return false
+    case .idle, .completed, .failed:
+      return true
+    }
+  }
+
+  private func cleanupDate(for metadata: RecordingMetadata) -> Date {
+    metadata.endedAt ?? metadata.startedAt
+  }
+
+  private func audioStorageBytes(for metadata: RecordingMetadata) -> Int64 {
+    audioURLs(for: metadata).reduce(Int64.zero) { total, url in
+      let values = try? url.resourceValues(forKeys: [.fileSizeKey])
+      return total + Int64(values?.fileSize ?? 0)
+    }
+  }
+
+  private func refreshAudioStorageBytes() {
+    audioStorageBytes = recordings.reduce(Int64.zero) {
+      $0 + audioStorageBytes(for: $1)
     }
   }
 

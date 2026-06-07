@@ -22,8 +22,10 @@ MeetingAssistant is a SwiftPM-based native macOS app. The executable target is i
 - `Sources/MeetingAssistant/App` contains the `@main` SwiftUI app entrypoint.
 - `Sources/MeetingAssistantCore/Models` contains Codable recording and transcript data.
 - `Sources/MeetingAssistantCore/Stores` owns local file persistence under `~/Documents/MeetingAssistant Recordings`.
+- `RecordingStore` also owns saved-audio discovery, audio storage accounting, and audio-only retention cleanup.
 - `Sources/MeetingAssistantCore/Services` owns ScreenCaptureKit capture, post-recording WhisperKit file transcription (`WhisperKitTranscriber`), permissions, Markdown export, and audio helpers.
 - `Sources/MeetingAssistantCore/Views` contains SwiftUI views using a native sidebar/detail macOS layout.
+- The New Meeting landing state is full-window; the library sidebar/detail layout appears for saved and active meetings.
 - `Sources/MeetingAssistantCore/Support` contains small formatting and timing helpers.
 - Root-level `app.icns` and `app.iconset` are the source app icon assets.
 
@@ -40,6 +42,8 @@ MeetingAssistant is a SwiftPM-based native macOS app. The executable target is i
 - Non-fatal transcription errors are preserved and appended as warning segments at the end of the final transcript instead of being swallowed.
 - Speaker labels are source-level only in v1: `You`, `Computer audio`, or `Mixed`.
 - Protected or DRM media may not be available through macOS capture APIs.
+- Every saved meeting can reveal its available audio files in Finder. Mixed audio is preferred when present, followed by the separate computer and microphone tracks.
+- Audio retention policies can automatically remove audio after 7/30/90 days or when total audio storage exceeds a configured limit. Cleanup preserves meeting metadata and transcripts.
 
 ## Change Rules
 
@@ -50,4 +54,7 @@ Update `README.md` when changing user-facing behavior, setup steps, permissions,
 
 ## Implementation Plan
 
-Update each step when it needs to (if its done, ongoing, etc....)
+- [x] Expose saved meeting audio files in Finder for external transcription.
+- [x] Add audio storage accounting and automatic audio-only retention policies.
+- [x] Make New Meeting a full-window state with a Go to Library action.
+- [x] Show an interactive list of the three most recent meetings on New Meeting.

@@ -14,9 +14,127 @@ public struct SettingsView: View {
         .tabItem {
           Label("Audio", systemImage: "mic")
         }
+      StorageSettingsView()
+        .tabItem {
+          Label("Storage", systemImage: "internaldrive")
+        }
     }
     .frame(width: 620, height: 460)
     .scenePadding()
+  }
+}
+
+private struct StorageSettingsView: View {
+  @State private var store = AppSession.shared.store
+  @State private var cleanupError: String?
+  @AppStorage(AudioStoragePreferences.policyKey) private var policyRaw = AudioRetentionPolicy.never.rawValue
+  @AppStorage(AudioStoragePreferences.storageLimitKey) private var storageLimitBytes =
+    AudioStoragePreferences.defaultStorageLimitBytes
+
+  private static let sizeFormatter: ByteCountFormatter = {
+    let formatter = ByteCountFormatter()
+    formatter.allowedUnits = [.useMB, .useGB]
+    formatter.countStyle = .file
+    return formatter
+  }()
+
+  private let storageLimits = [
+    1_000_000_000,
+    5_000_000_000,
+    10_000_000_000,
+    25_000_000_000,
+    50_000_000_000
+  ]
+
+  private var policy: AudioRetentionPolicy {
+    AudioRetentionPolicy(rawValue: policyRaw) ?? .never
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Recording Storage")
+            .font(.title2.weight(.semibold))
+          Text("Manage saved meeting audio without deleting transcripts or meeting details.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+
+        GroupBox {
+          VStack(alignment: .leading, spacing: 14) {
+            LabeledContent("Audio storage used") {
+              Text(Self.sizeFormatter.string(fromByteCount: store.audioStorageBytes))
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            }
+
+            Picker("Delete audio", selection: $policyRaw) {
+              ForEach(AudioRetentionPolicy.allCases) { policy in
+                Text(policy.displayName).tag(policy.rawValue)
+              }
+            }
+
+            if policy == .storageLimit {
+              Picker("Storage limit", selection: $storageLimitBytes) {
+                ForEach(storageLimits, id: \.self) { bytes in
+                  Text(Self.sizeFormatter.string(fromByteCount: Int64(bytes))).tag(bytes)
+                }
+              }
+            }
+
+            Text("Cleanup removes only audio files. Transcripts and meeting details remain available.")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+
+            HStack(spacing: 10) {
+              Button {
+                applyCleanup()
+              } label: {
+                Label("Apply Cleanup Now", systemImage: "trash")
+              }
+              .disabled(policy == .never)
+
+              Button {
+                NSWorkspace.shared.open(store.rootDirectory)
+              } label: {
+                Label("Open Recordings Folder", systemImage: "folder")
+              }
+            }
+          }
+          .padding(8)
+        }
+
+        if let cleanupError {
+          Text(cleanupError)
+            .font(.callout)
+            .foregroundStyle(.red)
+            .textSelection(.enabled)
+        }
+      }
+      .padding(.vertical, 4)
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .task {
+      await store.reload()
+    }
+    .onChange(of: policyRaw) { _, _ in
+      applyCleanup()
+    }
+    .onChange(of: storageLimitBytes) { _, _ in
+      guard policy == .storageLimit else { return }
+      applyCleanup()
+    }
+  }
+
+  private func applyCleanup() {
+    do {
+      try store.applyConfiguredAudioCleanupIfNeeded()
+      cleanupError = nil
+    } catch {
+      cleanupError = error.localizedDescription
+    }
   }
 }
 
