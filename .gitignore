@@ -1,8 +1,16 @@
+# macOS
 .DS_Store
+
+# Swift Package Manager / build output
 .build/
-dist/
+.swiftpm/
 DerivedData/
 *.xcuserdata/
+
+# Local app bundle staging (produced by script/build_and_run.sh)
+dist/
+
+# Local agent/editor files
 .claude/
-AGENTS.md
 CLAUDE.md
+AGENTS.md

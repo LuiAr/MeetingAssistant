@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MeetingAssistant - Packaging &amp; Testing Guide</title>
+<style>
+  :root {
+    --blue: #bad0ef;
+    --peach: #edcbc7;
+    --cream: #ffe6ad;
+    --ink: #1f2433;
+    --ink-soft: #545b70;
+    --card: #ffffff;
+    --line: #e6e3ee;
+    --accent: #3f6bd6;
+    --accent-soft: #eaf0fd;
+    --warn: #b4640a;
+    --warn-soft: #fff2dd;
+    --tip: #1f7a52;
+    --tip-soft: #e7f6ee;
+    --code-bg: #1c2030;
+    --code-ink: #e8ecf8;
+    --radius: 16px;
+    --shadow: 0 10px 30px rgba(31,36,51,0.10);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+    line-height: 1.6;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, var(--blue), transparent 60%),
+      radial-gradient(1000px 700px at 10% 110%, var(--cream), transparent 55%),
+      linear-gradient(135deg, #f6f8fd 0%, #fdf6f3 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 22px 90px; }
+
+  header.hero {
+    background: linear-gradient(135deg, var(--blue) 0%, var(--peach) 52%, var(--cream) 100%);
+    border-radius: 22px;
+    padding: 38px 34px;
+    box-shadow: var(--shadow);
+    margin-bottom: 14px;
+  }
+  header.hero .kicker {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 12px;
+    font-weight: 700;
+    color: #4a4256;
+    opacity: 0.85;
+  }
+  header.hero h1 { margin: 8px 0 6px; font-size: 33px; line-height: 1.15; }
+  header.hero p { margin: 0; font-size: 16px; color: #3a3550; max-width: 60ch; }
+
+  .toc {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: var(--shadow);
+    margin-bottom: 26px;
+  }
+  .toc strong { display:block; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); margin-bottom: 8px; }
+  .toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 26px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+
+  section.card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 26px 28px;
+    box-shadow: var(--shadow);
+    margin-bottom: 22px;
+  }
+  .step-head { display: flex; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .badge {
+    flex: none;
+    width: 38px; height: 38px;
+    border-radius: 11px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700; font-size: 18px;
+    display: grid; place-items: center;
+    box-shadow: 0 4px 12px rgba(63,107,214,0.35);
+  }
+  h2 { font-size: 23px; margin: 26px 0 4px; }
+  section.card h2 { margin-top: 0; }
+  h3 { font-size: 17px; margin: 22px 0 6px; }
+  p, li { font-size: 15.5px; }
+  .lede { color: var(--ink-soft); margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14.5px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--accent-soft); color: #2a3f78; font-weight: 700; }
+  td code { white-space: nowrap; }
+
+  code {
+    font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+    background: #f0f1f6;
+    padding: 1.5px 6px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #283047;
+  }
+  .codeblock { position: relative; margin: 14px 0; }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    padding: 16px 18px;
+    border-radius: 12px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+  }
+  pre code { background: none; color: inherit; padding: 0; font-size: 13px; }
+  .copy-btn {
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(255,255,255,0.12);
+    color: #fff; border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 7px; padding: 4px 10px; font-size: 12px; cursor: pointer;
+    transition: background 0.15s;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,0.25); }
+  .copy-btn.done { background: #2f9e6b; border-color: #2f9e6b; }
+
+  .callout { border-radius: 12px; padding: 14px 16px 14px 16px; margin: 16px 0; border: 1px solid; font-size: 14.5px; }
+  .callout .ttl { font-weight: 700; display: block; margin-bottom: 2px; }
+  .callout.info { background: var(--accent-soft); border-color: #cdddfb; color: #233c74; }
+  .callout.warn { background: var(--warn-soft); border-color: #f3dcb0; color: #7a4708; }
+  .callout.tip  { background: var(--tip-soft);  border-color: #c4e8d4; color: #155f3f; }
+
+  ul.check { list-style: none; padding-left: 4px; }
+  ul.check li { margin: 7px 0; display: flex; gap: 10px; align-items: flex-start; }
+  ul.check input { margin-top: 4px; width: 17px; height: 17px; accent-color: var(--accent); }
+
+  .pill { display:inline-block; background:#eef0f6; border:1px solid var(--line); border-radius:999px; padding:2px 10px; font-size:12.5px; color:var(--ink-soft); margin-right:6px; }
+  footer { text-align:center; color: var(--ink-soft); font-size: 13px; margin-top: 30px; }
+  footer a { color: var(--accent); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div class="kicker">MeetingAssistant</div>
+    <h1>📦 Packaging &amp; Testing Guide</h1>
+    <p>From a clean build to a downloadable GitHub Release, and how to run your <strong>development</strong> build and the <strong>official</strong> release side by side without their permissions or data colliding.</p>
+  </header>
+
+  <nav class="toc">
+    <strong>On this page</strong>
+    <ol>
+      <li><a href="#idea">The one thing to get right</a></li>
+      <li><a href="#prereq">Prerequisites</a></li>
+      <li><a href="#ids">Choose your bundle IDs</a></li>
+      <li><a href="#build">Build a release app</a></li>
+      <li><a href="#package">Package for release</a></li>
+      <li><a href="#github">Publish the GitHub Release</a></li>
+      <li><a href="#install">The downloader's journey</a></li>
+      <li><a href="#firstrun">First run inside the app</a></li>
+      <li><a href="#coexist">Dev vs official, side by side</a></li>
+      <li><a href="#checklist">Test checklist</a></li>
+      <li><a href="#trouble">Troubleshooting</a></li>
+    </ol>
+  </nav>
+
+  <section class="card" id="idea">
+    <h2>🔑 The one thing to get right</h2>
+    <p class="lede">Everything else is mechanical. This is the part people trip on.</p>
+    <p>macOS grants privacy permissions (Microphone, Screen&nbsp;Recording) <strong>per app identity</strong>, keyed by the app's <em>bundle identifier</em> and its code signature. Your local development build and the public release are two different binaries. If they share the same bundle identifier, macOS treats them as the same app, and their permission grants and Launch Services entries fight each other. The fix is simple: <strong>give the release a different bundle identifier from your dev build</strong>.</p>
+    <div class="callout info">
+      <span class="ttl">In short</span>
+      Dev build stays <code>devswift.MeetingAssistant</code> (unchanged). The release gets a new, stable identifier you own, for example <code>com.devswift.MeetingAssistant</code>. Two identities, two independent permission grants, zero collisions.
+    </div>
+  </section>
+
+  <section class="card" id="prereq">
+    <h2>🧰 Prerequisites</h2>
+    <ul>
+      <li>A Mac running <strong>macOS 15 (Sequoia) or later</strong>. The app's minimum target is now macOS 15.</li>
+      <li><strong>Xcode 16+</strong> or a matching <strong>Swift 6.2</strong> toolchain (<code>swift --version</code> to check).</li>
+      <li>The project builds and tests cleanly first:</li>
+    </ul>
+    <div class="codeblock">
+<pre><code>swift build
+swift test</code></pre>
+    </div>
+    <div class="callout tip">
+      <span class="ttl">💡 Verify before you package</span>
+      The recent fixes were written without a local compiler available, so run <code>swift build</code> and <code>swift test</code> once and fix any errors before cutting a release. Everything else here assumes a clean build.
+    </div>
+  </section>
+
+  <section class="card" id="ids">
+    <div class="step-head"><div class="badge">1</div><h2>Choose your bundle IDs</h2></div>
+    <p class="lede">Decide this once and keep it stable forever. Changing it later resets users' permissions.</p>
+    <table>
+      <tr><th>Build</th><th>Bundle identifier</th><th>Where it lives</th></tr>
+      <tr><td>Development</td><td><code>devswift.MeetingAssistant</code></td><td><code>dist/</code> via <code>build_and_run.sh</code></td></tr>
+      <tr><td>Official release</td><td><code>com.devswift.MeetingAssistant</code></td><td><code>/Applications</code> after download</td></tr>
+    </table>
+    <p>Use any reverse-DNS string you control for the release ID. Because the IDs differ, each shows up as its own row in <em>System Settings ▸ Privacy &amp; Security</em>, with its own Microphone and Screen Recording switches.</p>
+    <div class="callout warn">
+      <span class="ttl">⚠️ One resource is still shared</span>
+      Both builds save recordings to <code>~/Documents/MeetingAssistant Recordings</code> (the path is hard-coded, not tied to the bundle ID). That is usually fine, but if you want full isolation, suffix the folder in debug builds. In <code>RecordingStore.defaultRootDirectory</code>:
+      <div class="codeblock">
+<pre><code>nonisolated public static var defaultRootDirectory: URL {
+  let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+  #if DEBUG
+  return base.appendingPathComponent("MeetingAssistant Recordings (Dev)", isDirectory: true)
+  #else
+  return base.appendingPathComponent("MeetingAssistant Recordings", isDirectory: true)
+  #endif
+}</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="build">
+    <div class="step-head"><div class="badge">2</div><h2>Build a release app</h2></div>
+    <p class="lede">A release build is optimised, and the development-only smoke-record mode is compiled out automatically.</p>
+    <p>The existing <code>script/build_and_run.sh</code> makes a <em>debug</em> bundle for local use. For a distributable build, save the script below as <code>script/package_release.sh</code>, make it executable (<code>chmod +x</code>), and run it. It mirrors the dev script but builds in release configuration and stamps the <strong>release</strong> bundle identifier.</p>
+    <div class="codeblock">
+<pre><code>#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME="MeetingAssistant"
+BUNDLE_ID="com.devswift.MeetingAssistant"
+MIN_SYSTEM_VERSION="15.0"
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." &amp;&amp; pwd)"
+DIST="$ROOT_DIR/dist"
+APP="$DIST/$APP_NAME.app"
+
+swift build -c release
+BIN="$(swift build -c release --show-bin-path)/$APP_NAME"
+
+rm -rf "$APP"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
+chmod +x "$APP/Contents/MacOS/$APP_NAME"
+cp "$ROOT_DIR/app.icns" "$APP/Contents/Resources/AppIcon.icns"
+
+cat &gt;"$APP/Contents/Info.plist" &lt;&lt;PLIST
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;
+&lt;dict&gt;
+  &lt;key&gt;CFBundleExecutable&lt;/key&gt;&lt;string&gt;$APP_NAME&lt;/string&gt;
+  &lt;key&gt;CFBundleIdentifier&lt;/key&gt;&lt;string&gt;$BUNDLE_ID&lt;/string&gt;
+  &lt;key&gt;CFBundleIconFile&lt;/key&gt;&lt;string&gt;AppIcon&lt;/string&gt;
+  &lt;key&gt;CFBundleName&lt;/key&gt;&lt;string&gt;$APP_NAME&lt;/string&gt;
+  &lt;key&gt;CFBundleShortVersionString&lt;/key&gt;&lt;string&gt;1.0.0&lt;/string&gt;
+  &lt;key&gt;CFBundleVersion&lt;/key&gt;&lt;string&gt;1&lt;/string&gt;
+  &lt;key&gt;CFBundlePackageType&lt;/key&gt;&lt;string&gt;APPL&lt;/string&gt;
+  &lt;key&gt;LSMinimumSystemVersion&lt;/key&gt;&lt;string&gt;$MIN_SYSTEM_VERSION&lt;/string&gt;
+  &lt;key&gt;NSPrincipalClass&lt;/key&gt;&lt;string&gt;NSApplication&lt;/string&gt;
+  &lt;key&gt;NSMicrophoneUsageDescription&lt;/key&gt;&lt;string&gt;MeetingAssistant records microphone audio so local transcripts can include what you say in meetings.&lt;/string&gt;
+  &lt;key&gt;NSScreenCaptureUsageDescription&lt;/key&gt;&lt;string&gt;MeetingAssistant captures system audio from meeting apps and browsers to transcribe remote participants.&lt;/string&gt;
+  &lt;key&gt;NSSystemAudioCaptureUsageDescription&lt;/key&gt;&lt;string&gt;MeetingAssistant captures system audio from meeting apps and browsers to transcribe remote participants.&lt;/string&gt;
+&lt;/dict&gt;
+&lt;/plist&gt;
+PLIST
+
+codesign --force --sign - \
+  --identifier "$BUNDLE_ID" \
+  --requirements "=designated =&gt; identifier \"$BUNDLE_ID\"" \
+  "$APP"
+
+echo "Built $APP"</code></pre>
+    </div>
+    <div class="callout info">
+      <span class="ttl">About signing</span>
+      <code>--sign -</code> is <em>ad-hoc</em> signing: no Apple Developer account, no notarisation. The app runs fine, but the first time a user opens it Gatekeeper will warn that it cannot be verified. Step 6 covers exactly how they get past that.
+    </div>
+  </section>
+
+  <section class="card" id="package">
+    <div class="step-head"><div class="badge">3</div><h2>Package for release</h2></div>
+    <p class="lede">A zip is the simplest. A DMG looks more polished. Either works for GitHub.</p>
+    <h3>Option A - Zip (recommended, simplest)</h3>
+    <p>Use <code>ditto</code> rather than the Finder's Compress, so the bundle's signature and symlinks survive intact:</p>
+    <div class="codeblock">
+<pre><code>ditto -c -k --sequesterRsrc --keepParent \
+  dist/MeetingAssistant.app dist/MeetingAssistant-1.0.0.zip</code></pre>
+    </div>
+    <h3>Option B - DMG (drag-to-Applications feel)</h3>
+    <div class="codeblock">
+<pre><code>hdiutil create -volname "MeetingAssistant" \
+  -srcfolder dist/MeetingAssistant.app \
+  -ov -format UDZO dist/MeetingAssistant-1.0.0.dmg</code></pre>
+    </div>
+    <p>For a fancier DMG with a background image and an Applications shortcut, the <code>create-dmg</code> tool (<code>brew install create-dmg</code>) is worth a look, but it is optional.</p>
+  </section>
+
+  <section class="card" id="github">
+    <div class="step-head"><div class="badge">4</div><h2>Publish the GitHub Release</h2></div>
+    <ol>
+      <li>Tag the commit: <code>git tag v1.0.0 &amp;&amp; git push origin v1.0.0</code>.</li>
+      <li>On GitHub, go to <strong>Releases ▸ Draft a new release</strong>, pick the tag <code>v1.0.0</code>.</li>
+      <li>Write release notes. Tell users plainly that the app is <strong>unsigned / not notarised</strong> and link to the "first open" steps below.</li>
+      <li>Attach <code>MeetingAssistant-1.0.0.zip</code> (and/or the DMG) as a binary asset.</li>
+      <li>Publish.</li>
+    </ol>
+    <p>Or do it from the terminal with the GitHub CLI:</p>
+    <div class="codeblock">
+<pre><code>gh release create v1.0.0 dist/MeetingAssistant-1.0.0.zip \
+  --title "MeetingAssistant 1.0.0" \
+  --notes "Local, on-device meeting transcription. Unsigned build - see the README for how to open it the first time."</code></pre>
+    </div>
+    <div class="callout tip">
+      <span class="ttl">💡 Include the notices</span>
+      Some dependencies are Apache-2.0, which asks you to keep their notices with redistributed binaries. Drop <code>THIRD_PARTY_NOTICES.md</code> into the release notes or alongside the asset.
+    </div>
+  </section>
+
+  <section class="card" id="install">
+    <div class="step-head"><div class="badge">5</div><h2>The downloader's journey 🍎</h2></div>
+    <p class="lede">What a user does after clicking your release asset. Walk through it yourself once.</p>
+    <ol>
+      <li><strong>Download</strong> the <code>.zip</code> (or <code>.dmg</code>) from the release page.</li>
+      <li><strong>Unzip</strong> (double-click) or <strong>mount the DMG</strong>, then drag <strong>MeetingAssistant.app</strong> into <strong>/Applications</strong>.</li>
+      <li><strong>First open is blocked.</strong> Because the app is unsigned and downloaded, macOS quarantines it. On macOS Sequoia and later, the old Control-click ▸ Open trick no longer bypasses this. Use one of the two methods below.</li>
+    </ol>
+
+    <h3>Method 1 - System Settings (no Terminal)</h3>
+    <ol>
+      <li>Double-click the app. You will see "MeetingAssistant cannot be opened because Apple cannot check it...". Click <strong>Done</strong>.</li>
+      <li>Open <strong>System Settings ▸ Privacy &amp; Security</strong>, scroll to the <strong>Security</strong> section near the bottom.</li>
+      <li>Click <strong>Open Anyway</strong> next to the MeetingAssistant message, then authenticate.</li>
+      <li>Launch it again and confirm. You only do this once.</li>
+    </ol>
+    <div class="callout warn">
+      <span class="ttl">⚠️ Time limit</span>
+      You must click <strong>Open Anyway</strong> within about an hour of the first blocked attempt, otherwise the button disappears and you start over.
+    </div>
+
+    <h3>Method 2 - Terminal (fastest, most reliable)</h3>
+    <p>Strip the quarantine flag and the warning never appears. This also fixes the dreaded "app is damaged and can't be opened" message that quarantined unsigned apps sometimes show:</p>
+    <div class="codeblock">
+<pre><code>xattr -dr com.apple.quarantine /Applications/MeetingAssistant.app</code></pre>
+    </div>
+    <p>Then open the app normally. Consider putting this exact command in your release notes for users who are comfortable with Terminal.</p>
+  </section>
+
+  <section class="card" id="firstrun">
+    <div class="step-head"><div class="badge">6</div><h2>First run inside the app</h2></div>
+    <ol>
+      <li><strong>🎙️ Download the model.</strong> Open <em>Settings ▸ Models</em> and download the Whisper model (about 1.6 GB, fetched from Hugging Face). Recording stays disabled until it is on disk.</li>
+      <li><strong>Grant permissions.</strong> Start a meeting; macOS prompts for <strong>Microphone</strong> and <strong>Screen Recording</strong>.</li>
+      <li><strong>Relaunch for Screen Recording.</strong> macOS only applies a fresh Screen Recording grant after a restart. The app detects this and shows <strong>Open Screen Recording Settings</strong> and <strong>Quit &amp; Reopen</strong> buttons. Use them, then start again.</li>
+      <li><strong>Record.</strong> Talk, play some computer audio, stop, and confirm a transcript appears in the library.</li>
+    </ol>
+  </section>
+
+  <section class="card" id="coexist">
+    <h2>🔀 Dev vs official, side by side</h2>
+    <p class="lede">How the two builds stay out of each other's way once the IDs differ.</p>
+    <table>
+      <tr><th>Concern</th><th>Dev build</th><th>Official build</th></tr>
+      <tr><td>Bundle ID</td><td><code>devswift.MeetingAssistant</code></td><td><code>com.devswift.MeetingAssistant</code></td></tr>
+      <tr><td>Privacy permissions</td><td>Own row in Settings</td><td>Separate, independent row</td></tr>
+      <tr><td>Location</td><td><code>dist/MeetingAssistant.app</code></td><td><code>/Applications/MeetingAssistant.app</code></td></tr>
+      <tr><td>Smoke-record mode</td><td>Available (DEBUG)</td><td>Compiled out</td></tr>
+      <tr><td>Recordings folder</td><td colspan="2">Shared by default - isolate with the DEBUG tweak in Step 1 if you want them separate</td></tr>
+    </table>
+    <div class="callout tip">
+      <span class="ttl">💡 Make them visually distinct</span>
+      To tell the two apart at a glance (handy in the permissions list and the Dock), give the dev build a different display name. In <code>script/build_and_run.sh</code>, set <code>CFBundleName</code> to <code>MeetingAssistant (Dev)</code> in the generated Info.plist. The dev script already uses <code>devswift.MeetingAssistant</code>, so no ID change is needed there.
+    </div>
+    <p>With different identifiers, you can keep the official app installed in <code>/Applications</code> and rebuild and run your dev copy from <code>dist/</code> at the same time. Granting or revoking permission for one never touches the other.</p>
+  </section>
+
+  <section class="card" id="checklist">
+    <h2>✅ Test checklist</h2>
+    <p class="lede">Tick these off on a clean machine (or a fresh user account) before you announce the release.</p>
+    <ul class="check">
+      <li><input type="checkbox"><span><code>swift build</code> and <code>swift test</code> both pass.</span></li>
+      <li><input type="checkbox"><span>Release app launches from <code>/Applications</code> after the Gatekeeper bypass.</span></li>
+      <li><input type="checkbox"><span>Microphone and Screen Recording prompts appear, and the Quit &amp; Reopen flow works.</span></li>
+      <li><input type="checkbox"><span>Model downloads in Settings, with progress and a Ready state.</span></li>
+      <li><input type="checkbox"><span>A short recording produces a transcript with both "You" and "Computer audio" lines.</span></li>
+      <li><input type="checkbox"><span>Pause / resume, mute, and Stop &amp; Save all behave.</span></li>
+      <li><input type="checkbox"><span>Stopping a recording mid-stream never crashes (this exercised the data-race fix).</span></li>
+      <li><input type="checkbox"><span>Official and dev builds appear as two separate apps in Privacy &amp; Security.</span></li>
+      <li><input type="checkbox"><span>Release build does not respond to <code>--smoke-record</code>.</span></li>
+      <li><input type="checkbox"><span>Quitting Wi-Fi mid-download shows "Waiting for internet" and recovers.</span></li>
+    </ul>
+  </section>
+
+  <section class="card" id="trouble">
+    <h2>🛠️ Troubleshooting</h2>
+    <h3>"MeetingAssistant is damaged and can't be opened"</h3>
+    <p>This is the quarantine flag on an unsigned download, not actual damage. Run <code>xattr -dr com.apple.quarantine /Applications/MeetingAssistant.app</code> and reopen.</p>
+    <h3>Screen Recording is on but recording still fails</h3>
+    <p>macOS needs a relaunch to apply the grant. Use the in-app <strong>Quit &amp; Reopen</strong> button, or quit and reopen manually, then try again.</p>
+    <h3>Permissions look granted but capture is silent</h3>
+    <p>Almost always a bundle-ID clash from an earlier build that used the same identifier. Remove old grants in <em>Privacy &amp; Security</em>, confirm the release uses its own identifier, and relaunch.</p>
+    <h3>Model download fails or stalls</h3>
+    <p>Check connectivity and free disk space (about 1.6 GB needed). The downloader retries with backoff and shows "Waiting for internet"; Cancel and Download again from Settings if needed.</p>
+    <h3>Build error referencing ToolbarSpacer or an unavailable API</h3>
+    <p>The minimum target is macOS 15. macOS 26-only APIs must stay inside <code>if #available(macOS 26, *)</code>. If you add new SwiftUI that the SDK flags, gate it the same way.</p>
+  </section>
+
+  <footer>
+    MeetingAssistant - local, on-device meeting transcription. Built with care for your privacy. 🎙️
+  </footer>
+
+</div>
+
+<script>
+  document.querySelectorAll('.codeblock').forEach(function (block) {
+    var pre = block.querySelector('pre');
+    if (!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', function () {
+      var text = pre.innerText;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Copied';
+        btn.classList.add('done');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('done'); }, 1600);
+      });
+    });
+    block.appendChild(btn);
+  });
+</script>
+</body>
+</html>

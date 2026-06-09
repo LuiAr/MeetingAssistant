@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import Foundation
 import MeetingAssistantCore
@@ -6,7 +7,7 @@ import SwiftUI
 struct SmokeRecordView: View {
   var seconds: Int
 
-  @State private var store = RecordingStore()
+  @State private var store = RecordingStore(rootDirectory: StorageLocationPreferences.recordingsDirectory())
   @State private var recorder: MeetingRecorder?
   @State private var message = "Preparing smoke recording..."
 
@@ -110,4 +111,5 @@ private struct SmokeRecordResult: Codable {
   var systemAudioPath: String?
   var microphoneAudioPath: String?
 }
+#endif
 

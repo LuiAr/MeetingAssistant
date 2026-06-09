@@ -9,12 +9,21 @@ public struct ContentView: View {
   @State private var showInfo = false
   @State private var copyConfirmation: String?
   @State private var copyConfirmationToken = 0
+  @AppStorage(OnboardingPreferences.isCompleteKey) private var onboardingComplete = false
   @Environment(\.openSettings) private var openSettings
 
   @MainActor
   public init() {}
 
   public var body: some View {
+    if onboardingComplete {
+      mainInterface
+    } else {
+      OnboardingView(onComplete: { onboardingComplete = true })
+    }
+  }
+
+  private var mainInterface: some View {
     Group {
       if showsNewMeetingLanding {
         NewRecordingLandingView(
@@ -39,7 +48,9 @@ public struct ContentView: View {
           .labelStyle(.titleAndIcon)
           .help("Copy this meeting as AI-ready context — title, transcript, and any details enabled in Info")
         }
-        ToolbarSpacer(.fixed)
+        if #available(macOS 26, *) {
+          ToolbarSpacer(.fixed)
+        }
       }
 
       // 2. Library + New meeting + Settings — grouped on the right.
@@ -77,7 +88,9 @@ public struct ContentView: View {
 
       // 3. More, then 4. Info — only while a recording is shown, each its own group.
       if showDetailActions {
-        ToolbarSpacer(.fixed)
+        if #available(macOS 26, *) {
+          ToolbarSpacer(.fixed)
+        }
         ToolbarItem(placement: .primaryAction) {
           Menu {
             Button {
@@ -101,7 +114,9 @@ public struct ContentView: View {
           }
           .help("More actions — reveal audio or folder, copy transcript")
         }
-        ToolbarSpacer(.fixed)
+        if #available(macOS 26, *) {
+          ToolbarSpacer(.fixed)
+        }
         ToolbarItem(placement: .primaryAction) {
           Button {
             showInfo.toggle()
@@ -143,18 +158,27 @@ public struct ContentView: View {
         searchText: $searchText,
         store: session.store
       )
-      .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
+      .navigationSplitViewColumnWidth(min: 300, ideal: 300, max: 300)
       .toolbar(removing: .sidebarToggle)
     } detail: {
-      if recorderIsActive {
-        RecorderPanelView(recorder: session.recorder)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .navigationTitle("Recording")
-      } else if let selectedRecording {
-        RecordingDetailView(metadata: selectedRecording, store: session.store)
-      } else {
-        ContentUnavailableView("No Meeting Selected", systemImage: "doc.text")
+      ZStack {
+        Color(nsColor: .windowBackgroundColor)
+          .ignoresSafeArea()
+
+        if recorderIsActive {
+          RecorderPanelView(recorder: session.recorder)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .navigationTitle("Recording")
+        } else if let selectedRecording {
+          RecordingDetailView(metadata: selectedRecording, store: session.store)
+            .id(selectedRecording.id)
+            .transition(.opacity)
+        } else {
+          ContentUnavailableView("No Meeting Selected", systemImage: "doc.text")
+            .transition(.opacity)
+        }
       }
+      .animation(.easeInOut(duration: 0.22), value: selectedRecordingID)
     }
     .inspector(isPresented: inspectorPresented) {
       if let selectedRecording, !recorderIsActive {
@@ -304,99 +328,174 @@ private struct NewRecordingLandingView: View {
   var onSelectRecording: (UUID) -> Void
 
   @AppStorage("selectedMicrophoneDeviceID") private var selectedMicrophoneDeviceID = ""
+  @AppStorage(OnboardingPreferences.isCompleteKey) private var onboardingComplete = false
   @State private var title = ""
   @State private var modelManager = ModelDownloadManager.shared
+  @State private var store = AppSession.shared.store
   @State private var recorder = AppSession.shared.recorder
+  @State private var isStartButtonHovered = false
+  @State private var appeared = false
   @Environment(\.openSettings) private var openSettings
   @FocusState private var titleFocused: Bool
 
   var body: some View {
-    VStack(spacing: 28) {
-      Spacer(minLength: 12)
+    ZStack {
+      AppGradientBackground()
 
-      VStack(spacing: 10) {
-        Image(systemName: "waveform.badge.mic")
-          .font(.system(size: 44, weight: .regular))
-          .foregroundStyle(.tint)
-        Text("MeetingAssistant")
-          .font(.largeTitle.weight(.semibold))
-        Text("Capture a meeting and transcribe it locally on this Mac.")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-
-      VStack(spacing: 12) {
-        TextField("Meeting title", text: $title)
-          .textFieldStyle(.roundedBorder)
-          .font(.title3)
-          .focused($titleFocused)
-          .frame(maxWidth: 420)
-          .onSubmit(start)
-
-        Button(action: start) {
-          Label("Start Recording", systemImage: "record.circle")
-            .font(.headline)
-            .frame(minWidth: 200)
+      VStack(spacing: 28) {
+        VStack(spacing: 10) {
+          Image(systemName: "waveform.badge.mic")
+            .font(.system(size: 44, weight: .regular))
+            .foregroundStyle(.tint)
+            .symbolEffect(.bounce, options: .nonRepeating, value: appeared)
+          Text("MeetingAssistant")
+            .font(.largeTitle.weight(.semibold))
+          Text("Capture a meeting and transcribe it locally on this Mac.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .keyboardShortcut(.defaultAction)
-        .disabled(!canStart)
-        .help(canStart ? "" : (modelOnDisk ? "" : "Download the Whisper model in Settings before recording."))
-      }
 
-      if !recentRecordings.isEmpty {
-        RecentMeetingsStackView(
-          recordings: recentRecordings,
-          onSelect: onSelectRecording,
-          onOpenLibrary: {
-            guard let mostRecentRecording = recentRecordings.first else { return }
-            onSelectRecording(mostRecentRecording.id)
+        VStack(spacing: 12) {
+          TextField("Meeting title", text: $title)
+            .textFieldStyle(.plain)
+            .font(.title3)
+            .focused($titleFocused)
+            .padding(.horizontal, 15)
+            .frame(height: 42)
+            .frame(maxWidth: 420)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay {
+              RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(
+                  titleFocused ? Color.accentColor.opacity(0.85) : Color.primary.opacity(0.14),
+                  lineWidth: titleFocused ? 2 : 1
+                )
+            }
+            .shadow(color: .black.opacity(titleFocused ? 0.15 : 0.08), radius: 10, y: 4)
+            .onSubmit(start)
+
+          Button(action: start) {
+            Label("Start Recording", systemImage: "record.circle")
+              .font(.headline)
+              .frame(minWidth: 200)
           }
-        )
-      }
-
-      if !modelOnDisk {
-        Button("Open Settings to download model") {
-          openSettings()
+          .buttonStyle(.borderedProminent)
+          .controlSize(.large)
+          .buttonBorderShape(.capsule)
+          .overlay {
+            Capsule()
+              .strokeBorder(Color.white.opacity(isStartButtonHovered && canStart ? 0.9 : 0), lineWidth: 1.5)
+              .allowsHitTesting(false)
+          }
+          .shadow(color: Color.accentColor.opacity(0.14), radius: 7, y: 3)
+          .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+              isStartButtonHovered = hovering && canStart
+            }
+          }
+          .pointerStyle(canStart ? .link : nil)
+          .keyboardShortcut(.defaultAction)
+          .disabled(!canStart)
+          .help(startHelp)
         }
-        .buttonStyle(.link)
-      }
 
-      if let errorMessage = recorder.errorMessage {
-        Text(errorMessage)
-          .font(.callout)
-          .foregroundStyle(.red)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
+        if !recentRecordings.isEmpty {
+          RecentMeetingsStackView(
+            recordings: recentRecordings,
+            onSelect: onSelectRecording,
+            onOpenLibrary: {
+              guard let mostRecentRecording = recentRecordings.first else { return }
+              onSelectRecording(mostRecentRecording.id)
+            }
+          )
+        }
+
+        if !readiness.canRecord {
+          SetupNeededBanner(
+            readiness: readiness,
+            onFinishSetup: { onboardingComplete = false }
+          )
           .frame(maxWidth: 420)
-          .textSelection(.enabled)
-      }
+        }
 
-      Spacer()
+        if !store.isRootDirectoryReachable {
+          FolderUnavailableBanner(
+            path: store.rootDirectory.path,
+            onOpenSettings: { openSettings() }
+          )
+          .frame(maxWidth: 420)
+        }
+
+        if let errorMessage = recorder.errorMessage {
+          Text(errorMessage)
+            .font(.callout)
+            .foregroundStyle(.red)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: 420)
+            .textSelection(.enabled)
+        }
+
+        if let guidance = recorder.permissionGuidance {
+          PermissionGuidanceActions(guidance: guidance, permissions: recorder.permissions)
+            .frame(maxWidth: 420)
+        }
+
+      }
+      .opacity(appeared ? 1 : 0)
+      .offset(y: appeared ? 0 : 14)
+      .padding(.horizontal, 32)
+      .padding(.vertical, 26)
+      .frame(maxWidth: 500)
+      .padding(.vertical, 22)
+      .frame(maxHeight: .infinity)
     }
-    .padding(.horizontal, 40)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .task {
-      modelManager.refreshStatus()
+      refreshReadiness()
       titleFocused = true
+      withAnimation(.smooth(duration: 0.5)) {
+        appeared = true
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+      // Catch permissions revoked or the model deleted while the app was in the background, so
+      // the Start button and its help text always reflect the current state.
+      refreshReadiness()
     }
   }
 
-  private var modelOnDisk: Bool {
-    modelManager.isModelOnDisk()
+  private func refreshReadiness() {
+    modelManager.refreshStatus()
+    recorder.permissions.refreshCachedStatuses()
+  }
+
+  private var readiness: RecordingReadiness {
+    RecordingReadiness(
+      modelReady: modelManager.isModelOnDisk(),
+      microphoneAuthorised: recorder.permissions.microphone == .authorized,
+      screenRecordingAuthorised: recorder.permissions.systemAudio == .authorized
+    )
   }
 
   private var canStart: Bool {
-    guard modelOnDisk else { return false }
+    guard readiness.canRecord, store.isRootDirectoryReachable else { return false }
     switch recorder.status {
     case .idle, .completed, .failed:
       return true
     default:
       return false
     }
+  }
+
+  private var startHelp: String {
+    if let help = readiness.startButtonHelp { return help }
+    if !store.isRootDirectoryReachable {
+      return "The recordings folder is not available. Choose a new location in Settings ▸ Recordings."
+    }
+    return ""
   }
 
   private func start() {
@@ -413,6 +512,117 @@ private struct NewRecordingLandingView: View {
       if recorder.status == .recording, let id = recorder.currentDocument?.metadata.id {
         selection = id
         title = ""
+      }
+    }
+  }
+}
+
+/// Shown on the New Meeting screen while recording is still gated. It lists exactly what is
+/// missing and offers a single button back into the setup wizard.
+private struct SetupNeededBanner: View {
+  let readiness: RecordingReadiness
+  let onFinishSetup: () -> Void
+
+  var body: some View {
+    VStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 8) {
+        requirementRow("Transcription model", done: readiness.modelReady)
+        requirementRow("Microphone access", done: readiness.microphoneAuthorised)
+        requirementRow("Screen Recording access", done: readiness.screenRecordingAuthorised)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      Button(action: onFinishSetup) {
+        Label("Finish setup", systemImage: "checklist")
+          .frame(maxWidth: .infinity)
+      }
+      .buttonStyle(.borderedProminent)
+      .controlSize(.large)
+      .pointingHandCursor()
+    }
+    .padding(16)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .strokeBorder(Color.primary.opacity(0.10))
+    }
+  }
+
+  @ViewBuilder
+  private func requirementRow(_ title: String, done: Bool) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: done ? "checkmark.circle.fill" : "circle")
+        .foregroundStyle(done ? Color.green : Color.secondary)
+      Text(title)
+        .foregroundStyle(done ? .secondary : .primary)
+      Spacer()
+    }
+    .font(.callout)
+  }
+}
+
+/// Shown when the configured recordings folder cannot be reached, for example because an
+/// external drive was unplugged. Offers a route to Settings to re-pick the location.
+private struct FolderUnavailableBanner: View {
+  let path: String
+  let onOpenSettings: () -> Void
+
+  var body: some View {
+    VStack(spacing: 10) {
+      Label("Recordings folder unavailable", systemImage: "externaldrive.badge.exclamationmark")
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(.orange)
+      Text("\(path) could not be opened. It may be on a drive that is not connected.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+      Button("Choose a new location") {
+        onOpenSettings()
+      }
+      .buttonStyle(.bordered)
+      .pointingHandCursor()
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity)
+    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: 14, style: .continuous)
+        .strokeBorder(Color.orange.opacity(0.30))
+    }
+  }
+}
+
+/// Actionable buttons shown when a recording could not start because of a missing permission.
+/// For Screen Recording it offers the System Settings shortcut plus a relaunch, because macOS
+/// only applies a freshly granted Screen Recording permission after the app restarts.
+private struct PermissionGuidanceActions: View {
+  let guidance: PermissionRequestResult
+  let permissions: PermissionCenter
+
+  var body: some View {
+    switch guidance {
+    case .granted:
+      EmptyView()
+    case .microphoneDenied:
+      Button("Open Microphone Settings") {
+        permissions.openMicrophoneSettings()
+      }
+      .buttonStyle(.bordered)
+      .pointingHandCursor()
+    case .screenRecordingNotReady:
+      HStack(spacing: 10) {
+        Button("Open Screen Recording Settings") {
+          permissions.openScreenRecordingSettings()
+        }
+        .buttonStyle(.bordered)
+        .pointingHandCursor()
+
+        Button("Quit & Reopen") {
+          permissions.relaunch()
+        }
+        .buttonStyle(.borderedProminent)
+        .pointingHandCursor()
       }
     }
   }

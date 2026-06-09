@@ -40,5 +40,24 @@ struct MarkdownExporterTests {
     #expect(markdown.contains("- 00:00:30-00:00:45"))
     #expect(markdown.contains("[00:00:35] Computer audio: Roadmap looks good."))
   }
+
+  @Test
+  func escapesQuotesBackslashesAndNewlinesInTitleFrontmatter() {
+    let startedAt = Date(timeIntervalSince1970: 1_000)
+    let metadata = RecordingMetadata(
+      title: "A \"quoted\"\\path\nsecond line",
+      createdAt: startedAt,
+      startedAt: startedAt,
+      folderName: "weird-title"
+    )
+    let document = RecordingDocument(metadata: metadata)
+
+    let markdown = MarkdownExporter.markdown(for: document)
+
+    // The YAML title stays on a single line with quotes and backslashes escaped.
+    #expect(markdown.contains("title: \"A \\\"quoted\\\"\\\\path second line\""))
+    // The frontmatter delimiters and following keys are intact (not split by the newline).
+    #expect(markdown.contains("title: \"A \\\"quoted\\\"\\\\path second line\"\ncreated_at:"))
+  }
 }
 

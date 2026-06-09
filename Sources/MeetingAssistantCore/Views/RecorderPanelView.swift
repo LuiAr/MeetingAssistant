@@ -59,6 +59,16 @@ struct RecorderPanelView: View {
         .frame(maxWidth: 420)
       }
 
+      if let captureWarning = recorder.captureWarning {
+        Label(captureWarning, systemImage: "exclamationmark.triangle.fill")
+          .font(.callout)
+          .foregroundStyle(.orange)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: 420)
+          .textSelection(.enabled)
+      }
+
       if let errorMessage = recorder.errorMessage {
         Text(errorMessage)
           .font(.callout)
@@ -141,6 +151,7 @@ struct RecorderPanelView: View {
       .controlSize(.large)
       .tint(recorder.isMicrophoneMuted ? .red : nil)
       .help("Mute your microphone — it is recorded as silence while muted")
+      .pointerStyle(.link)
 
       if recorder.status == .paused {
         Button {
@@ -150,6 +161,7 @@ struct RecorderPanelView: View {
             .frame(minWidth: 90)
         }
         .controlSize(.large)
+        .pointerStyle(.link)
       } else {
         Button {
           recorder.pause()
@@ -158,6 +170,7 @@ struct RecorderPanelView: View {
             .frame(minWidth: 90)
         }
         .controlSize(.large)
+        .pointerStyle(.link)
       }
 
       Button {
@@ -171,6 +184,7 @@ struct RecorderPanelView: View {
       .controlSize(.large)
       .buttonStyle(.borderedProminent)
       .tint(.red)
+      .pointerStyle(.link)
     }
   }
 
@@ -247,6 +261,7 @@ private struct ModelNotReadyBanner: View {
         openSettings()
       }
       .buttonStyle(.bordered)
+      .pointerStyle(.link)
     }
     .padding(.vertical, 8)
     .padding(.horizontal, 12)

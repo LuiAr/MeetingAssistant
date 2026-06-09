@@ -12,7 +12,7 @@ public final class AppSession {
   public let store: RecordingStore
   public let recorder: MeetingRecorder
 
-  public init(rootDirectory: URL = RecordingStore.defaultRootDirectory) {
+  public init(rootDirectory: URL = StorageLocationPreferences.recordingsDirectory()) {
     let store = RecordingStore(rootDirectory: rootDirectory)
     self.store = store
     self.recorder = MeetingRecorder(store: store)

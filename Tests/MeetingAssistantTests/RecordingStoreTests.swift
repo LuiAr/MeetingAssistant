@@ -122,6 +122,62 @@ struct RecordingStoreTests {
     #expect(store.audioStorageBytes == 8)
   }
 
+  @Test
+  @MainActor
+  func updateRootDirectoryMovesExistingRecordings() async throws {
+    let rootA = temporaryRoot()
+    let rootB = temporaryRoot()
+    defer {
+      try? FileManager.default.removeItem(at: rootA)
+      try? FileManager.default.removeItem(at: rootB)
+    }
+
+    let store = RecordingStore(rootDirectory: rootA)
+    var document = try store.createDraft(
+      title: "Movable",
+      localeIdentifier: "en_US",
+      startedAt: Date(timeIntervalSince1970: 2_000)
+    )
+    document.metadata.status = .completed
+    try store.persist(document)
+    let folderName = document.metadata.folderName
+
+    try await store.updateRootDirectory(to: rootB, moveExisting: true)
+
+    #expect(store.rootDirectory.standardizedFileURL == rootB.standardizedFileURL)
+    #expect(store.recordings.count == 1)
+    #expect(store.recordings.first?.title == "Movable")
+    #expect(FileManager.default.fileExists(atPath: rootB.appendingPathComponent(folderName).path))
+    #expect(FileManager.default.fileExists(atPath: rootA.appendingPathComponent(folderName).path) == false)
+  }
+
+  @Test
+  @MainActor
+  func updateRootDirectoryWithoutMovingLeavesExistingInPlace() async throws {
+    let rootA = temporaryRoot()
+    let rootB = temporaryRoot()
+    defer {
+      try? FileManager.default.removeItem(at: rootA)
+      try? FileManager.default.removeItem(at: rootB)
+    }
+
+    let store = RecordingStore(rootDirectory: rootA)
+    var document = try store.createDraft(
+      title: "Stays",
+      localeIdentifier: "en_US",
+      startedAt: Date(timeIntervalSince1970: 2_000)
+    )
+    document.metadata.status = .completed
+    try store.persist(document)
+    let folderName = document.metadata.folderName
+
+    try await store.updateRootDirectory(to: rootB, moveExisting: false)
+
+    #expect(store.rootDirectory.standardizedFileURL == rootB.standardizedFileURL)
+    #expect(store.recordings.isEmpty)
+    #expect(FileManager.default.fileExists(atPath: rootA.appendingPathComponent(folderName).path))
+  }
+
   @MainActor
   private func completedDocument(
     title: String,

@@ -177,8 +177,20 @@ public enum MarkdownExporter {
     return lines.joined(separator: "\n")
   }
 
+  /// Produces a double-quoted YAML scalar. Interior line breaks and tabs are collapsed to
+  /// spaces so the value stays on one line, then backslashes and double quotes are escaped
+  /// (backslash first, so the escape we add for quotes is not doubled). Without this a title
+  /// containing a quote, backslash, or newline would corrupt the frontmatter.
   private static func yamlEscaped(_ value: String) -> String {
-    "\"\(value.replacingOccurrences(of: "\"", with: "\\\""))\""
+    let singleLine = value
+      .replacingOccurrences(of: "\r\n", with: " ")
+      .replacingOccurrences(of: "\n", with: " ")
+      .replacingOccurrences(of: "\r", with: " ")
+      .replacingOccurrences(of: "\t", with: " ")
+    let escaped = singleLine
+      .replacingOccurrences(of: "\\", with: "\\\\")
+      .replacingOccurrences(of: "\"", with: "\\\"")
+    return "\"\(escaped)\""
   }
 }
 

@@ -5,7 +5,7 @@ MODE="${1:-run}"
 SMOKE_SECONDS="${2:-3}"
 APP_NAME="MeetingAssistant"
 BUNDLE_ID="devswift.MeetingAssistant"
-MIN_SYSTEM_VERSION="26.0"
+MIN_SYSTEM_VERSION="15.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -16,8 +16,15 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ICON_NAME="AppIcon"
-SOURCE_ICON="$ROOT_DIR/app.icns"
-SOURCE_ICONSET="$ROOT_DIR/app.iconset"
+# Dev builds use the DEV-badged icon so they are easy to tell apart from the release app in
+# the Dock and app switcher. Falls back to the release icon if the dev assets are missing.
+if [[ -f "$ROOT_DIR/app-dev.icns" || -d "$ROOT_DIR/app-dev.iconset" ]]; then
+  SOURCE_ICON="$ROOT_DIR/app-dev.icns"
+  SOURCE_ICONSET="$ROOT_DIR/app-dev.iconset"
+else
+  SOURCE_ICON="$ROOT_DIR/app.icns"
+  SOURCE_ICONSET="$ROOT_DIR/app.iconset"
+fi
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 

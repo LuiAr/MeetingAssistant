@@ -17,7 +17,7 @@ struct RecentMeetingsStackView: View {
       HStack {
         Text("Recent meetings")
           .font(.caption.weight(.semibold))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.primary.opacity(0.78))
         Spacer()
         Button(action: onOpenLibrary) {
           HStack(spacing: 4) {
@@ -28,8 +28,9 @@ struct RecentMeetingsStackView: View {
           .font(.caption)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.primary.opacity(0.72))
         .help("Open the most recent meeting in Library")
+        .pointerStyle(.link)
       }
       .padding(.horizontal, 4)
 
@@ -58,10 +59,11 @@ struct RecentMeetingsStackView: View {
         }
         .padding(.horizontal, 15)
         .frame(maxWidth: .infinity, minHeight: 46)
-        .background(.tint.opacity(isLibraryButtonHovered ? 0.10 : 0.065), in: RoundedRectangle(cornerRadius: 12))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(.tint.opacity(isLibraryButtonHovered ? 0.12 : 0.075), in: RoundedRectangle(cornerRadius: 12))
         .overlay {
           RoundedRectangle(cornerRadius: 12)
-            .strokeBorder(.tint.opacity(isLibraryButtonHovered ? 0.24 : 0.14))
+            .strokeBorder(.primary.opacity(isLibraryButtonHovered ? 0.20 : 0.12))
         }
         .contentShape(RoundedRectangle(cornerRadius: 12))
       }
@@ -78,6 +80,7 @@ struct RecentMeetingsStackView: View {
         }
       }
       .help("Open the most recent meeting in Library")
+      .pointerStyle(.link)
     }
     .frame(maxWidth: 420)
   }
@@ -119,10 +122,11 @@ struct RecentMeetingsStackView: View {
       }
       .padding(.horizontal, 14)
       .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-      .background(Color.primary.opacity(isHovered ? 0.045 : 0.025), in: RoundedRectangle(cornerRadius: 14))
+      .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+      .background(Color.primary.opacity(isHovered ? 0.055 : 0.025), in: RoundedRectangle(cornerRadius: 14))
       .overlay {
         RoundedRectangle(cornerRadius: 14)
-          .strokeBorder(.primary.opacity(isHovered ? 0.13 : 0.06))
+          .strokeBorder(.primary.opacity(isHovered ? 0.20 : 0.11))
       }
       .shadow(
         color: .black.opacity(isHovered ? 0.11 : 0.035),
@@ -132,7 +136,6 @@ struct RecentMeetingsStackView: View {
       .contentShape(RoundedRectangle(cornerRadius: 14))
     }
     .buttonStyle(.plain)
-    .opacity(isHovered ? 1 : baseOpacity(for: index))
     .scaleEffect(isHovered ? 1.012 : 1)
     .offset(y: isHovered ? -2 : 0)
     .onHover { hovering in
@@ -142,17 +145,7 @@ struct RecentMeetingsStackView: View {
     }
     .animation(.spring(response: 0.28, dampingFraction: 0.78), value: hoveredRecordingID)
     .help("Open \(recording.title) in Library")
-  }
-
-  private func baseOpacity(for index: Int) -> Double {
-    switch index {
-    case 1:
-      return 0.90
-    case 2:
-      return 0.82
-    default:
-      return 1
-    }
+    .pointerStyle(.link)
   }
 
 }

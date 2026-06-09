@@ -5,20 +5,24 @@ import Observation
 @MainActor
 @Observable
 public final class RecordingStore {
+  /// The default recordings location. The literal path now lives in the preferences
+  /// abstraction so call sites that honour a user override resolve through it instead.
   nonisolated public static var defaultRootDirectory: URL {
-    FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("MeetingAssistant Recordings", isDirectory: true)
+    StorageLocationPreferences.defaultRecordingsDirectory
   }
 
   public private(set) var recordings: [RecordingMetadata] = []
   public private(set) var audioStorageBytes: Int64 = 0
-  public var rootDirectory: URL
+  public private(set) var rootDirectory: URL
+  /// Non-nil when the recordings folder could not be opened (for example its drive is not
+  /// connected), so the UI can show a clear error and a way to re-pick the location.
+  public private(set) var lastLoadError: String?
 
   private let fileManager: FileManager
   private let jsonEncoder: JSONEncoder
   private let jsonDecoder: JSONDecoder
 
-  public init(rootDirectory: URL = RecordingStore.defaultRootDirectory, fileManager: FileManager = .default) {
+  public init(rootDirectory: URL = StorageLocationPreferences.recordingsDirectory(), fileManager: FileManager = .default) {
     self.rootDirectory = rootDirectory
     self.fileManager = fileManager
 
@@ -35,17 +39,70 @@ public final class RecordingStore {
   public func reload() async {
     do {
       try ensureRootDirectory()
-      let documents = try loadDocuments()
-      recordings = documents
-        .map(\.metadata)
-        .sorted { $0.startedAt > $1.startedAt }
+      lastLoadError = nil
     } catch {
       recordings = []
       audioStorageBytes = 0
+      lastLoadError = Self.unreachableMessage(for: rootDirectory)
       return
     }
 
+    // Read and decode every recording.json off the main actor so a large library does not
+    // block the UI while the library window opens or refreshes.
+    let root = rootDirectory
+    let documents = await Task.detached(priority: .utility) {
+      Self.loadDocuments(in: root)
+    }.value
+
+    recordings = documents
+      .map(\.metadata)
+      .sorted { $0.startedAt > $1.startedAt }
+
     try? applyConfiguredAudioCleanupIfNeeded()
+  }
+
+  /// True when the recordings folder (or its containing folder) is reachable on disk. A custom
+  /// folder on an external drive becomes unreachable when the drive is unplugged.
+  public var isRootDirectoryReachable: Bool {
+    if fileManager.fileExists(atPath: rootDirectory.path) { return true }
+    let parent = rootDirectory.deletingLastPathComponent()
+    return fileManager.fileExists(atPath: parent.path)
+  }
+
+  /// Changes where recordings are stored. When `moveExisting` is true, existing recording
+  /// folders are moved into the new location; name collisions are skipped so nothing is ever
+  /// overwritten. The in-memory list is reloaded from the new location afterwards.
+  public func updateRootDirectory(to newURL: URL, moveExisting: Bool) async throws {
+    let oldURL = rootDirectory
+    guard oldURL.standardizedFileURL != newURL.standardizedFileURL else { return }
+
+    try fileManager.createDirectory(at: newURL, withIntermediateDirectories: true)
+
+    if moveExisting, fileManager.fileExists(atPath: oldURL.path) {
+      try moveRecordingFolders(from: oldURL, to: newURL)
+    }
+
+    rootDirectory = newURL
+    await reload()
+  }
+
+  private func moveRecordingFolders(from oldURL: URL, to newURL: URL) throws {
+    let children = (try? fileManager.contentsOfDirectory(
+      at: oldURL,
+      includingPropertiesForKeys: nil,
+      options: [.skipsHiddenFiles]
+    )) ?? []
+
+    for child in children {
+      let destination = newURL.appendingPathComponent(child.lastPathComponent)
+      // Never overwrite: if the destination already exists, leave the source in place.
+      guard !fileManager.fileExists(atPath: destination.path) else { continue }
+      try fileManager.moveItem(at: child, to: destination)
+    }
+  }
+
+  nonisolated static func unreachableMessage(for url: URL) -> String {
+    "The recordings folder could not be opened at \(url.path). It may be on a drive that is not connected. Choose a new location in Settings ▸ Recordings."
   }
 
   public func createDraft(title: String, localeIdentifier: String, startedAt: Date = Date()) throws -> RecordingDocument {
@@ -143,7 +200,7 @@ public final class RecordingStore {
     storageLimitBytes: Int64 = Int64(AudioStoragePreferences.defaultStorageLimitBytes),
     now: Date = Date()
   ) throws {
-    let documents = try loadDocuments()
+    let documents = Self.loadDocuments(in: rootDirectory)
 
     switch policy {
     case .never:
@@ -200,18 +257,25 @@ public final class RecordingStore {
     try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
   }
 
-  private func loadDocuments() throws -> [RecordingDocument] {
+  /// Reads and decodes every recording.json under `rootDirectory`. `nonisolated` and `static`
+  /// so it can run off the main actor (see `reload()`); it uses its own decoder rather than
+  /// the main-actor-isolated instance one. Unreadable or malformed entries are skipped.
+  nonisolated static func loadDocuments(in rootDirectory: URL) -> [RecordingDocument] {
+    let fileManager = FileManager.default
     guard fileManager.fileExists(atPath: rootDirectory.path) else { return [] }
-    let directories = try fileManager.contentsOfDirectory(
+    guard let directories = try? fileManager.contentsOfDirectory(
       at: rootDirectory,
       includingPropertiesForKeys: [.isDirectoryKey],
       options: [.skipsHiddenFiles]
-    )
+    ) else { return [] }
+
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
 
     return directories.compactMap { directory in
       let jsonURL = directory.appendingPathComponent("recording.json")
       guard let data = try? Data(contentsOf: jsonURL) else { return nil }
-      return try? jsonDecoder.decode(RecordingDocument.self, from: data)
+      return try? decoder.decode(RecordingDocument.self, from: data)
     }
   }
 

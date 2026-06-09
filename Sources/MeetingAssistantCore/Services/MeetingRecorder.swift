@@ -13,6 +13,13 @@ public final class MeetingRecorder {
   public private(set) var currentDocument: RecordingDocument?
   public private(set) var errorMessage: String?
   public private(set) var transcriptionProgress: WhisperTranscriptionProgress?
+  /// Non-nil when a recording could not start because a required permission was missing. The
+  /// UI uses it to show actionable buttons (open System Settings, relaunch) instead of a dead
+  /// end.
+  public private(set) var permissionGuidance: PermissionRequestResult?
+  /// Non-nil when audio could not be written during a recording (for example a disk error), so
+  /// the UI can warn that the capture is incomplete instead of silently producing no audio.
+  public private(set) var captureWarning: String?
 
   public let permissions = PermissionCenter()
 
@@ -36,11 +43,14 @@ public final class MeetingRecorder {
       return
     }
 
+    permissionGuidance = nil
     stateMachine.requestPermissions()
     publishState()
 
-    guard await permissions.requestRequiredPermissions() else {
-      stateMachine.fail("Microphone and Screen Recording permissions are required before recording.")
+    let permissionResult = await permissions.requestRequiredPermissions()
+    guard permissionResult == .granted else {
+      permissionGuidance = permissionResult
+      stateMachine.fail(permissionResult.failureMessage ?? "Microphone and Screen Recording permissions are required before recording.")
       publishState()
       return
     }
@@ -57,6 +67,7 @@ public final class MeetingRecorder {
       isMicrophoneMuted = false
       levels = AudioLevelSnapshot()
       errorMessage = nil
+      captureWarning = nil
       stateMachine.start(at: startedAt)
       publishState()
 
@@ -67,7 +78,15 @@ public final class MeetingRecorder {
         microphoneDeviceID: microphoneDeviceID,
         onLevel: { [weak self] source, level in
           Task { @MainActor [weak self] in
-            self?.levels.set(level, for: source)
+            // Ignore late callbacks that arrive after the capture has been torn down, so a
+            // trailing buffer can't write a stale level onto the next idle/finalizing screen.
+            guard let self, self.status == .recording || self.status == .paused else { return }
+            self.levels.set(level, for: source)
+          }
+        },
+        onWriteFailure: { [weak self] source in
+          Task { @MainActor [weak self] in
+            self?.captureWarning = Self.writeFailureMessage(for: source)
           }
         }
       )
@@ -161,9 +180,21 @@ public final class MeetingRecorder {
 
   public func discardCurrentError() {
     errorMessage = nil
+    permissionGuidance = nil
     if status == .failed {
       status = .idle
       stateMachine = RecordingStateMachine()
+    }
+  }
+
+  private static func writeFailureMessage(for source: AudioSource) -> String {
+    switch source {
+    case .system:
+      return "Computer audio could not be saved during this recording. The transcript may be incomplete."
+    case .microphone:
+      return "Microphone audio could not be saved during this recording. The transcript may be incomplete."
+    case .mixed:
+      return "Audio could not be saved during this recording. The transcript may be incomplete."
     }
   }
 

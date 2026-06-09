@@ -45,6 +45,7 @@ struct SidebarView: View {
   @State private var renameTarget: RecordingMetadata?
   @State private var renameText = ""
   @State private var deleteTarget: RecordingMetadata?
+  @State private var hoveredRecordingID: UUID?
 
   private var sortOrder: LibrarySortOrder {
     LibrarySortOrder(rawValue: sortOrderRaw) ?? .newest
@@ -70,6 +71,7 @@ struct SidebarView: View {
         }
       }
       .listStyle(.sidebar)
+      .scrollContentBackground(.hidden)
       .overlay {
         if recordings.isEmpty {
           emptyState
@@ -82,6 +84,12 @@ struct SidebarView: View {
     // and pin the header a fixed distance from the window's physical top so it clears the
     // traffic-light controls identically in every state.
     .ignoresSafeArea(.container, edges: .top)
+    // Give the sidebar its own opaque background so the detail's gradient (which is full-bleed
+    // behind the window) does not show through the translucent sidebar. The colour ignores the
+    // safe area so it also covers the title-bar strip under the traffic lights, otherwise the
+    // gradient peeks through the header at the very top. The gradient should appear only behind
+    // the detail on the right.
+    .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
     .alert("Rename Recording", isPresented: renamePresented) {
       TextField("Name", text: $renameText)
       Button("Cancel", role: .cancel) {}
@@ -171,7 +179,13 @@ struct SidebarView: View {
   // MARK: - Rows
 
   private func row(for recording: RecordingMetadata) -> some View {
-    HStack(spacing: 10) {
+    let isHovered = hoveredRecordingID == recording.id
+    let isSelected = selection == recording.id
+    // Suppress the hover treatment on the selected row so it doesn't fight the List's
+    // accent highlight.
+    let showsHover = isHovered && !isSelected
+
+    return HStack(spacing: 10) {
       Image(systemName: iconName(for: recording.status))
         .foregroundStyle(iconColor(for: recording.status))
         .frame(width: 16)
@@ -184,6 +198,27 @@ struct SidebarView: View {
           .font(.caption)
           .foregroundStyle(.secondary)
           .lineLimit(1)
+      }
+    }
+    .padding(.vertical, 8)
+    .padding(.horizontal, 8)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background {
+      RoundedRectangle(cornerRadius: 9, style: .continuous)
+        .fill(Color.primary.opacity(showsHover ? 0.06 : 0))
+    }
+    .overlay {
+      RoundedRectangle(cornerRadius: 9, style: .continuous)
+        .strokeBorder(Color.primary.opacity(showsHover ? 0.18 : 0), lineWidth: 1)
+    }
+    .contentShape(Rectangle())
+    .onHover { hovering in
+      withAnimation(.easeOut(duration: 0.15)) {
+        if hovering {
+          hoveredRecordingID = recording.id
+        } else if hoveredRecordingID == recording.id {
+          hoveredRecordingID = nil
+        }
       }
     }
   }

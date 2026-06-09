@@ -1,32 +1,146 @@
 import AppKit
 import SwiftUI
 
-public struct SettingsView: View {
-  public init() {}
+enum SettingsSection: String, CaseIterable, Identifiable {
+  case general
+  case recordings
+  case transcription
+  case audio
 
-  public var body: some View {
-    TabView {
-      ModelsSettingsView()
-        .tabItem {
-          Label("Models", systemImage: "sparkles")
-        }
-      AudioSettingsView()
-        .tabItem {
-          Label("Audio", systemImage: "mic")
-        }
-      StorageSettingsView()
-        .tabItem {
-          Label("Storage", systemImage: "internaldrive")
-        }
+  var id: String { rawValue }
+
+  var title: String {
+    switch self {
+    case .general: return "General"
+    case .recordings: return "Recordings"
+    case .transcription: return "Transcription"
+    case .audio: return "Audio"
     }
-    .frame(width: 620, height: 460)
-    .scenePadding()
+  }
+
+  var systemImage: String {
+    switch self {
+    case .general: return "gearshape"
+    case .recordings: return "folder"
+    case .transcription: return "sparkles"
+    case .audio: return "mic"
+    }
   }
 }
 
-private struct StorageSettingsView: View {
+public struct SettingsView: View {
+  @State private var selection: SettingsSection? = .general
+
+  public init() {}
+
+  public var body: some View {
+    NavigationSplitView {
+      List(SettingsSection.allCases, selection: $selection) { section in
+        Label(section.title, systemImage: section.systemImage)
+          .tag(section)
+      }
+      .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 240)
+      .toolbar(removing: .sidebarToggle)
+    } detail: {
+      ScrollView {
+        detail
+          .padding(24)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+    .frame(width: 800, height: 580)
+  }
+
+  @ViewBuilder
+  private var detail: some View {
+    switch selection ?? .general {
+    case .general:
+      GeneralSettingsView()
+    case .recordings:
+      RecordingsSettingsView()
+    case .transcription:
+      TranscriptionSettingsView()
+    case .audio:
+      AudioSettingsView()
+    }
+  }
+}
+
+private struct SettingsHeader: View {
+  let title: String
+  let subtitle: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(title)
+        .font(.title2.weight(.semibold))
+      Text(subtitle)
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+}
+
+private struct GeneralSettingsView: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: 18) {
+      SettingsHeader(
+        title: "General",
+        subtitle: "MeetingAssistant records and transcribes meetings entirely on this Mac."
+      )
+
+      GroupBox {
+        HStack(alignment: .top, spacing: 12) {
+          Image(systemName: "lock.shield")
+            .font(.title3)
+            .foregroundStyle(.tint)
+          VStack(alignment: .leading, spacing: 6) {
+            Text("On-device and private")
+              .font(.callout.weight(.semibold))
+            Text("Recording and transcription happen on-device. The only time the app uses the network is a one-time download of the transcription model.")
+              .font(.callout)
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(8)
+      }
+
+      GroupBox {
+        VStack(alignment: .leading, spacing: 10) {
+          Text("Setup")
+            .font(.callout.weight(.semibold))
+          Text("Run the first-time setup again to review the storage locations, model download, and permissions.")
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+          Button {
+            OnboardingPreferences.reset()
+            NSApp.activate(ignoringOtherApps: true)
+          } label: {
+            Label("Re-run setup", systemImage: "arrow.clockwise")
+          }
+          .pointingHandCursor()
+          Text("This shows the setup wizard again in the main window. Your recordings and downloaded model are kept.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(8)
+      }
+    }
+  }
+}
+
+private struct RecordingsSettingsView: View {
   @State private var store = AppSession.shared.store
+  @State private var pendingURL: URL?
+  @State private var showMovePrompt = false
+  @State private var locationError: String?
   @State private var cleanupError: String?
+
   @AppStorage(AudioStoragePreferences.policyKey) private var policyRaw = AudioRetentionPolicy.never.rawValue
   @AppStorage(AudioStoragePreferences.storageLimitKey) private var storageLimitBytes =
     AudioStoragePreferences.defaultStorageLimitBytes
@@ -51,73 +165,121 @@ private struct StorageSettingsView: View {
   }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Recording Storage")
-            .font(.title2.weight(.semibold))
-          Text("Manage saved meeting audio without deleting transcripts or meeting details.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
+    VStack(alignment: .leading, spacing: 18) {
+      SettingsHeader(
+        title: "Recordings",
+        subtitle: "Choose where meetings are saved and how long their audio is kept."
+      )
 
-        GroupBox {
-          VStack(alignment: .leading, spacing: 14) {
-            LabeledContent("Audio storage used") {
-              Text(Self.sizeFormatter.string(fromByteCount: store.audioStorageBytes))
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-            }
-
-            Picker("Delete audio", selection: $policyRaw) {
-              ForEach(AudioRetentionPolicy.allCases) { policy in
-                Text(policy.displayName).tag(policy.rawValue)
-              }
-            }
-
-            if policy == .storageLimit {
-              Picker("Storage limit", selection: $storageLimitBytes) {
-                ForEach(storageLimits, id: \.self) { bytes in
-                  Text(Self.sizeFormatter.string(fromByteCount: Int64(bytes))).tag(bytes)
-                }
-              }
-            }
-
-            Text("Cleanup removes only audio files. Transcripts and meeting details remain available.")
-              .font(.caption)
+      GroupBox {
+        VStack(alignment: .leading, spacing: 12) {
+          LabeledContent("Location") {
+            Text(store.rootDirectory.path)
+              .lineLimit(2)
+              .truncationMode(.middle)
               .foregroundStyle(.secondary)
+              .textSelection(.enabled)
+          }
 
-            HStack(spacing: 10) {
-              Button {
-                applyCleanup()
-              } label: {
-                Label("Apply Cleanup Now", systemImage: "trash")
-              }
-              .disabled(policy == .never)
+          if !store.isRootDirectoryReachable {
+            Label("This folder is not currently available. It may be on a drive that is not connected.", systemImage: "exclamationmark.triangle.fill")
+              .font(.callout)
+              .foregroundStyle(.orange)
+              .fixedSize(horizontal: false, vertical: true)
+          }
 
-              Button {
-                NSWorkspace.shared.open(store.rootDirectory)
-              } label: {
-                Label("Open Recordings Folder", systemImage: "folder")
+          HStack(spacing: 10) {
+            Button {
+              chooseLocation()
+            } label: {
+              Label("Choose folder…", systemImage: "folder.badge.gearshape")
+            }
+            .pointingHandCursor()
+
+            Button("Use default") {
+              requestApply(StorageLocationPreferences.defaultRecordingsDirectory)
+            }
+            .disabled(!StorageLocationPreferences.isUsingCustomRecordingsDirectory())
+            .pointingHandCursor(enabled: StorageLocationPreferences.isUsingCustomRecordingsDirectory())
+
+            Button {
+              NSWorkspace.shared.open(store.rootDirectory)
+            } label: {
+              Label("Reveal in Finder", systemImage: "folder")
+            }
+            .pointingHandCursor()
+
+            Spacer()
+          }
+
+          if let locationError {
+            Text(locationError)
+              .font(.callout)
+              .foregroundStyle(.red)
+              .textSelection(.enabled)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
+        .padding(8)
+      }
+
+      GroupBox {
+        VStack(alignment: .leading, spacing: 14) {
+          LabeledContent("Audio storage used") {
+            Text(Self.sizeFormatter.string(fromByteCount: store.audioStorageBytes))
+              .foregroundStyle(.secondary)
+              .monospacedDigit()
+          }
+
+          Picker("Delete audio", selection: $policyRaw) {
+            ForEach(AudioRetentionPolicy.allCases) { policy in
+              Text(policy.displayName).tag(policy.rawValue)
+            }
+          }
+
+          if policy == .storageLimit {
+            Picker("Storage limit", selection: $storageLimitBytes) {
+              ForEach(storageLimits, id: \.self) { bytes in
+                Text(Self.sizeFormatter.string(fromByteCount: Int64(bytes))).tag(bytes)
               }
             }
           }
-          .padding(8)
-        }
 
-        if let cleanupError {
-          Text(cleanupError)
-            .font(.callout)
-            .foregroundStyle(.red)
-            .textSelection(.enabled)
+          Text("Cleanup removes only audio files. Transcripts and meeting details remain available.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+
+          Button {
+            applyCleanup()
+          } label: {
+            Label("Apply cleanup now", systemImage: "trash")
+          }
+          .disabled(policy == .never)
+          .pointingHandCursor(enabled: policy != .never)
+
+          if let cleanupError {
+            Text(cleanupError)
+              .font(.callout)
+              .foregroundStyle(.red)
+              .textSelection(.enabled)
+          }
         }
+        .padding(8)
       }
-      .padding(.vertical, 4)
-      .frame(maxWidth: .infinity, alignment: .leading)
     }
     .task {
       await store.reload()
+    }
+    .confirmationDialog(
+      "Move existing recordings to the new location?",
+      isPresented: $showMovePrompt,
+      titleVisibility: .visible
+    ) {
+      Button("Move existing recordings") { applyLocation(move: true) }
+      Button("Use new location only") { applyLocation(move: false) }
+      Button("Cancel", role: .cancel) { pendingURL = nil }
+    } message: {
+      Text("Choose whether to move the recordings already saved here, or leave them in place and only save new meetings to the new location.")
     }
     .onChange(of: policyRaw) { _, _ in
       applyCleanup()
@@ -125,6 +287,38 @@ private struct StorageSettingsView: View {
     .onChange(of: storageLimitBytes) { _, _ in
       guard policy == .storageLimit else { return }
       applyCleanup()
+    }
+  }
+
+  private func chooseLocation() {
+    guard let url = DirectoryPicker.chooseDirectory(
+      message: "Choose a folder to store your meeting recordings."
+    ) else { return }
+    requestApply(url)
+  }
+
+  private func requestApply(_ url: URL) {
+    guard url.standardizedFileURL != store.rootDirectory.standardizedFileURL else { return }
+    pendingURL = url
+    let hasExisting = !store.recordings.isEmpty
+    if hasExisting {
+      showMovePrompt = true
+    } else {
+      applyLocation(move: false)
+    }
+  }
+
+  private func applyLocation(move: Bool) {
+    guard let url = pendingURL else { return }
+    pendingURL = nil
+    StorageLocationPreferences.setRecordingsDirectory(url)
+    Task {
+      do {
+        try await store.updateRootDirectory(to: StorageLocationPreferences.recordingsDirectory(), moveExisting: move)
+        locationError = nil
+      } catch {
+        locationError = error.localizedDescription
+      }
     }
   }
 
@@ -143,31 +337,23 @@ private struct AudioSettingsView: View {
   @State private var microphones: [MicrophoneDevice] = []
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Microphone")
-            .font(.title2.weight(.semibold))
-          Text("Choose which input device is captured alongside the computer audio while recording.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
+    VStack(alignment: .leading, spacing: 18) {
+      SettingsHeader(
+        title: "Audio",
+        subtitle: "Choose which input device is captured alongside the computer audio while recording."
+      )
 
-        GroupBox {
-          VStack(alignment: .leading, spacing: 14) {
-            Picker("Input device", selection: $selectedMicrophoneDeviceID) {
-              Text("System Default").tag("")
-              ForEach(microphones) { microphone in
-                Text(microphone.name).tag(microphone.id)
-              }
+      GroupBox {
+        VStack(alignment: .leading, spacing: 14) {
+          Picker("Input device", selection: $selectedMicrophoneDeviceID) {
+            Text("System Default").tag("")
+            ForEach(microphones) { microphone in
+              Text(microphone.name).tag(microphone.id)
             }
           }
-          .padding(8)
         }
+        .padding(8)
       }
-      .padding(.vertical, 4)
-      .frame(maxWidth: .infinity, alignment: .leading)
     }
     .task {
       microphones = MicrophoneDeviceProvider.devices()
@@ -175,9 +361,12 @@ private struct AudioSettingsView: View {
   }
 }
 
-private struct ModelsSettingsView: View {
+private struct TranscriptionSettingsView: View {
   @State private var manager = ModelDownloadManager.shared
   @State private var showDeleteConfirm = false
+  @State private var pendingURL: URL?
+  @State private var showMovePrompt = false
+  @State private var locationError: String?
 
   fileprivate static let sizeFormatter: ByteCountFormatter = {
     let f = ByteCountFormatter()
@@ -187,61 +376,38 @@ private struct ModelsSettingsView: View {
   }()
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 18) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Transcription Model")
-            .font(.title2.weight(.semibold))
-          Text("MeetingAssistant transcribes recordings on-device with WhisperKit. The model must be downloaded once before you can record.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
+    VStack(alignment: .leading, spacing: 18) {
+      SettingsHeader(
+        title: "Transcription",
+        subtitle: "MeetingAssistant transcribes recordings on-device with WhisperKit. The model must be downloaded once before you can record."
+      )
 
-        GroupBox {
-          VStack(alignment: .leading, spacing: 14) {
-            LabeledContent("Model") {
-              Text(manager.modelName)
-                .monospaced()
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-            }
+      modelLocationBox
+      modelStatusBox
 
-            if let bytes = manager.onDiskSizeBytes {
-              LabeledContent("Size on Disk") {
-                Text(Self.sizeFormatter.string(fromByteCount: bytes))
-                  .foregroundStyle(.secondary)
-                  .monospacedDigit()
-              }
-            }
-
-            Divider()
-
-            statusRow
-
-            progressRow
-
-            actionButtons
-          }
-          .padding(8)
-        }
-
-        if let error = manager.lastError, isFailedState {
-          Text(error)
-            .font(.callout)
-            .foregroundStyle(.red)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-
-        catalogSection
+      if let error = manager.lastError, isFailedState {
+        Text(error)
+          .font(.callout)
+          .foregroundStyle(.red)
+          .textSelection(.enabled)
+          .fixedSize(horizontal: false, vertical: true)
       }
-      .padding(.vertical, 4)
-      .frame(maxWidth: .infinity, alignment: .leading)
+
+      catalogSection
     }
     .onAppear {
       manager.refreshStatus()
+    }
+    .confirmationDialog(
+      "Move the downloaded model?",
+      isPresented: $showMovePrompt,
+      titleVisibility: .visible
+    ) {
+      Button("Move model to new location") { applyLocation(move: true) }
+      Button("Re-download later") { applyLocation(move: false) }
+      Button("Cancel", role: .cancel) { pendingURL = nil }
+    } message: {
+      Text("The model is about 1.6 GB. Move it to the new location, or point there and download it again later.")
     }
     .confirmationDialog(
       "Delete downloaded model?",
@@ -254,6 +420,82 @@ private struct ModelsSettingsView: View {
       Button("Cancel", role: .cancel) {}
     } message: {
       Text("This frees disk space but you'll need to download again before your next recording.")
+    }
+  }
+
+  private var modelLocationBox: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 12) {
+        LabeledContent("Location") {
+          Text(manager.downloadBase.path)
+            .lineLimit(2)
+            .truncationMode(.middle)
+            .foregroundStyle(.secondary)
+            .textSelection(.enabled)
+        }
+
+        if !manager.isDownloadBaseReachable {
+          Label("This folder is not currently available. It may be on a drive that is not connected.", systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.orange)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+
+        HStack(spacing: 10) {
+          Button {
+            chooseLocation()
+          } label: {
+            Label("Choose folder…", systemImage: "folder.badge.gearshape")
+          }
+          .pointingHandCursor()
+
+          Button("Use default") {
+            requestApply(StorageLocationPreferences.defaultModelDirectory)
+          }
+          .disabled(!StorageLocationPreferences.isUsingCustomModelDirectory())
+          .pointingHandCursor(enabled: StorageLocationPreferences.isUsingCustomModelDirectory())
+
+          Spacer()
+        }
+
+        if let locationError {
+          Text(locationError)
+            .font(.callout)
+            .foregroundStyle(.red)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .padding(8)
+    }
+  }
+
+  private var modelStatusBox: some View {
+    GroupBox {
+      VStack(alignment: .leading, spacing: 14) {
+        LabeledContent("Model") {
+          Text(manager.modelName)
+            .monospaced()
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .textSelection(.enabled)
+        }
+
+        if let bytes = manager.onDiskSizeBytes {
+          LabeledContent("Size on disk") {
+            Text(Self.sizeFormatter.string(fromByteCount: bytes))
+              .foregroundStyle(.secondary)
+              .monospacedDigit()
+          }
+        }
+
+        Divider()
+
+        statusRow
+        progressRow
+        actionButtons
+      }
+      .padding(8)
     }
   }
 
@@ -295,32 +537,38 @@ private struct ModelsSettingsView: View {
         Button {
           manager.startDownload()
         } label: {
-          Label("Download Model", systemImage: "arrow.down.circle")
+          Label("Download model", systemImage: "arrow.down.circle")
         }
         .buttonStyle(.borderedProminent)
+        .pointingHandCursor()
       case .downloading, .waitingForNetwork:
         Button {
           manager.cancelDownload()
         } label: {
           Label("Cancel", systemImage: "xmark.circle")
         }
+        .pointingHandCursor()
       case .downloaded:
         Button("Delete", role: .destructive) {
           showDeleteConfirm = true
         }
+        .pointingHandCursor()
       case .loading:
         Button("Cancel", role: .cancel) {
           manager.cancelDownload()
         }
+        .pointingHandCursor()
       case .ready:
         Button {
           NSWorkspace.shared.activateFileViewerSelecting([manager.modelFolder])
         } label: {
           Label("Reveal in Finder", systemImage: "folder")
         }
+        .pointingHandCursor()
         Button("Delete", role: .destructive) {
           showDeleteConfirm = true
         }
+        .pointingHandCursor()
       }
     }
   }
@@ -333,10 +581,12 @@ private struct ModelsSettingsView: View {
   @ViewBuilder
   private var catalogSection: some View {
     let activeID = manager.modelName
-    let recommendedID = WhisperModelCatalog.recommended().id
+    let hostBytes = WhisperModelCatalog.hostPhysicalMemoryBytes
+    let recommended = WhisperModelCatalog.recommended(forHostBytes: hostBytes)
+    let recommendedID: String? = hostBytes >= recommended.recommendedMinRAMBytes ? recommended.id : nil
 
     VStack(alignment: .leading, spacing: 8) {
-      Text("Available Models")
+      Text("Available models")
         .font(.headline)
       Text("More variants will land here. Switching between them isn't available yet.")
         .font(.caption)
@@ -361,6 +611,37 @@ private struct ModelsSettingsView: View {
     case .failed: return .red
     case .downloaded: return .green
     case .notDownloaded, .unknown: return .secondary
+    }
+  }
+
+  private func chooseLocation() {
+    guard let url = DirectoryPicker.chooseDirectory(
+      message: "Choose a folder to store the transcription model (about 1.6 GB)."
+    ) else { return }
+    requestApply(url)
+  }
+
+  private func requestApply(_ url: URL) {
+    guard url.standardizedFileURL != manager.downloadBase.standardizedFileURL else { return }
+    pendingURL = url
+    if manager.isModelOnDisk() {
+      showMovePrompt = true
+    } else {
+      applyLocation(move: false)
+    }
+  }
+
+  private func applyLocation(move: Bool) {
+    guard let url = pendingURL else { return }
+    pendingURL = nil
+    StorageLocationPreferences.setModelDirectory(url)
+    Task {
+      do {
+        try await manager.updateDownloadBase(to: StorageLocationPreferences.modelDirectory(), moveExisting: move)
+        locationError = nil
+      } catch {
+        locationError = error.localizedDescription
+      }
     }
   }
 }

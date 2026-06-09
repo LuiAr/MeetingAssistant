@@ -76,7 +76,9 @@ public final class ModelDownloadManager {
   private var loadTask: Task<Void, Error>?
   private var loadedPipe: WhisperKit?
 
-  private let downloadBase: URL
+  /// The base directory the model is downloaded into. User-configurable, so it is a `var` that
+  /// can be re-pointed at runtime via `updateDownloadBase(to:moveExisting:)`.
+  public private(set) var downloadBase: URL
   private let maxRetries: Int
   private let networkMonitor: NetworkReachability
 
@@ -84,22 +86,70 @@ public final class ModelDownloadManager {
     modelName: String = WhisperKitTranscriber.defaultModel,
     repo: String = "argmaxinc/whisperkit-coreml",
     maxRetries: Int = 6,
-    networkMonitor: NetworkReachability = .shared
+    networkMonitor: NetworkReachability = .shared,
+    downloadBase: URL = StorageLocationPreferences.modelDirectory()
   ) {
     self.modelName = modelName
     self.repo = repo
     self.maxRetries = maxRetries
     self.networkMonitor = networkMonitor
-    self.downloadBase = Self.defaultDownloadBase()
+    self.downloadBase = downloadBase
     refreshStatus()
   }
 
   /// Returns the directory the model is (or would be) installed into.
   public var modelFolder: URL {
-    downloadBase
+    Self.modelFolder(base: downloadBase, repo: repo, modelName: modelName)
+  }
+
+  nonisolated private static func modelFolder(base: URL, repo: String, modelName: String) -> URL {
+    base
       .appendingPathComponent("models", isDirectory: true)
       .appendingPathComponent(repo, isDirectory: true)
       .appendingPathComponent(modelName, isDirectory: true)
+  }
+
+  /// True when the model's base directory (or its containing folder) is reachable on disk. A
+  /// custom base on an external drive becomes unreachable when the drive is unplugged.
+  public var isDownloadBaseReachable: Bool {
+    if FileManager.default.fileExists(atPath: downloadBase.path) { return true }
+    let parent = downloadBase.deletingLastPathComponent()
+    return FileManager.default.fileExists(atPath: parent.path)
+  }
+
+  /// Re-points the model storage location. When `moveExisting` is true and a model is present at
+  /// the old location, its folder is moved to the new base; otherwise the new location is used
+  /// as-is (the user can re-download into it). Tearing down `loadedPipe` forces a reload from the
+  /// new path on next use.
+  public func updateDownloadBase(to newBase: URL, moveExisting: Bool) async throws {
+    let oldBase = downloadBase
+    guard oldBase.standardizedFileURL != newBase.standardizedFileURL else { return }
+
+    cancelDownload()
+    loadedPipe = nil
+
+    if moveExisting {
+      let repo = self.repo
+      let modelName = self.modelName
+      // Moving the model (about 1.6 GB) can be a cross-volume copy to an external drive, so it
+      // runs off the main actor to avoid hitching the UI.
+      try await Task.detached(priority: .userInitiated) {
+        let oldFolder = Self.modelFolder(base: oldBase, repo: repo, modelName: modelName)
+        guard FileManager.default.fileExists(atPath: oldFolder.path) else { return }
+        let newFolder = Self.modelFolder(base: newBase, repo: repo, modelName: modelName)
+        try FileManager.default.createDirectory(
+          at: newFolder.deletingLastPathComponent(),
+          withIntermediateDirectories: true
+        )
+        if FileManager.default.fileExists(atPath: newFolder.path) {
+          try FileManager.default.removeItem(at: newFolder)
+        }
+        try FileManager.default.moveItem(at: oldFolder, to: newFolder)
+      }.value
+    }
+
+    downloadBase = newBase
+    refreshStatus()
   }
 
   public func refreshStatus() {
@@ -109,16 +159,27 @@ public final class ModelDownloadManager {
       } else {
         status = .downloaded
       }
-      onDiskSizeBytes = computeOnDiskSize()
+      refreshOnDiskSize()
     } else {
       status = .notDownloaded
       onDiskSizeBytes = nil
     }
   }
 
-  /// Walks `modelFolder` and returns its total byte size, or nil if it doesn't exist.
-  private func computeOnDiskSize() -> Int64? {
+  /// Computes the on-disk size off the main actor and publishes it back, so walking a
+  /// multi-gigabyte model folder never blocks the UI.
+  private func refreshOnDiskSize() {
     let folder = modelFolder
+    Task { [weak self] in
+      let size = await Task.detached(priority: .utility) {
+        Self.computeOnDiskSize(at: folder)
+      }.value
+      self?.onDiskSizeBytes = size
+    }
+  }
+
+  /// Walks `folder` and returns its total byte size, or nil if it doesn't exist.
+  nonisolated private static func computeOnDiskSize(at folder: URL) -> Int64? {
     let fm = FileManager.default
     guard fm.fileExists(atPath: folder.path) else { return nil }
     guard let enumerator = fm.enumerator(
@@ -200,6 +261,9 @@ public final class ModelDownloadManager {
       return
     }
 
+    // Ensure the (possibly custom) base directory exists before WhisperKit downloads into it.
+    try? FileManager.default.createDirectory(at: downloadBase, withIntermediateDirectories: true)
+
     var attempt = 1
     while attempt <= maxRetries {
       if Task.isCancelled { refreshStatus(); return }
@@ -242,7 +306,7 @@ public final class ModelDownloadManager {
         // the conventional location and let load decide.
         _ = folder
         status = .downloaded
-        onDiskSizeBytes = computeOnDiskSize()
+        refreshOnDiskSize()
         _ = try await loadPipelineIfNeeded()
         return
       } catch is CancellationError {
@@ -296,21 +360,6 @@ public final class ModelDownloadManager {
       throw WhisperTranscriptionError.modelLoadFailed(message)
     }
   }
-
-  private static func defaultDownloadBase() -> URL {
-    let support = (try? FileManager.default.url(
-      for: .applicationSupportDirectory,
-      in: .userDomainMask,
-      appropriateFor: nil,
-      create: true
-    )) ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-
-    let root = support
-      .appendingPathComponent("MeetingAssistant", isDirectory: true)
-      .appendingPathComponent("WhisperKit", isDirectory: true)
-    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    return root
-  }
 }
 
 /// Lightweight wrapper around NWPathMonitor so the manager can poll/await connectivity.
@@ -321,7 +370,7 @@ public final class NetworkReachability: @unchecked Sendable {
   private let queue = DispatchQueue(label: "MeetingAssistant.NetworkReachability")
   private let lock = NSLock()
   private var currentlyReachable: Bool = true
-  private var waiters: [CheckedContinuation<Void, Never>] = []
+  private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
   public init() {
     monitor = NWPathMonitor()
@@ -348,16 +397,7 @@ public final class NetworkReachability: @unchecked Sendable {
     return await withTaskGroup(of: Bool.self) { group in
       group.addTask { [weak self] in
         guard let self else { return false }
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-          self.lock.lock()
-          if self.currentlyReachable {
-            self.lock.unlock()
-            cont.resume()
-          } else {
-            self.waiters.append(cont)
-            self.lock.unlock()
-          }
-        }
+        await self.waitForReachableSignal()
         return true
       }
       group.addTask {
@@ -370,19 +410,42 @@ public final class NetworkReachability: @unchecked Sendable {
     }
   }
 
+  /// Suspends until `handle(path:)` reports the network reachable. Cancellation-aware: if the
+  /// surrounding task is cancelled (for example when the timeout branch wins), the stored
+  /// continuation is removed and resumed so it never leaks. The `lock` serialises the
+  /// install and the cancel/resume so the continuation is always resumed exactly once.
+  private func waitForReachableSignal() async {
+    let id = UUID()
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+        lock.lock()
+        if currentlyReachable || Task.isCancelled {
+          lock.unlock()
+          cont.resume()
+          return
+        }
+        waiters[id] = cont
+        lock.unlock()
+      }
+    } onCancel: {
+      lock.lock()
+      let cont = waiters.removeValue(forKey: id)
+      lock.unlock()
+      cont?.resume()
+    }
+  }
+
   private func handle(path: NWPath) {
     let reachable = path.status == .satisfied
     lock.lock()
-    let changed = reachable != currentlyReachable
     currentlyReachable = reachable
     var toResume: [CheckedContinuation<Void, Never>] = []
     if reachable {
-      toResume = waiters
+      toResume = Array(waiters.values)
       waiters.removeAll()
     }
     lock.unlock()
 
-    _ = changed
     for cont in toResume {
       cont.resume()
     }

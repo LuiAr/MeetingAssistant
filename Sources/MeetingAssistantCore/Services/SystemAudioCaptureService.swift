@@ -15,6 +15,7 @@ public struct CaptureOutputFiles: Equatable, Sendable {
 public final class SystemAudioCaptureService: NSObject {
   public typealias LevelHandler = @Sendable (AudioSource, Float) -> Void
   public typealias SampleHandler = @Sendable (AudioSource, CMSampleBuffer) -> Void
+  public typealias WriteFailureHandler = @Sendable (AudioSource) -> Void
 
   private let sampleQueue = DispatchQueue(label: "MeetingAssistant.SystemAudioCaptureService.samples")
   private var stream: SCStream?
@@ -22,6 +23,10 @@ public final class SystemAudioCaptureService: NSObject {
   private var microphoneWriter: CapturedAudioFileWriter?
   private var onLevel: LevelHandler?
   private var onSample: SampleHandler?
+  private var onWriteFailure: WriteFailureHandler?
+  /// Sources for which a write failure has already been reported, so the handler fires once
+  /// per source rather than on every dropped buffer. Only touched on `sampleQueue`.
+  private var reportedWriteFailureSources: Set<AudioSource> = []
   private let pauseLock = NSLock()
   private var paused = false
   private var microphoneMuted = false
@@ -56,7 +61,8 @@ public final class SystemAudioCaptureService: NSObject {
     to directory: URL,
     microphoneDeviceID: String?,
     onLevel: @escaping LevelHandler,
-    onSample: SampleHandler? = nil
+    onSample: SampleHandler? = nil,
+    onWriteFailure: WriteFailureHandler? = nil
   ) async throws -> CaptureOutputFiles {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -81,10 +87,21 @@ public final class SystemAudioCaptureService: NSObject {
 
     let systemURL = directory.appendingPathComponent("system.caf")
     let microphoneURL = directory.appendingPathComponent("microphone.caf")
-    systemWriter = CapturedAudioFileWriter(url: systemURL)
-    microphoneWriter = CapturedAudioFileWriter(url: microphoneURL)
-    self.onLevel = onLevel
-    self.onSample = onSample
+
+    // The writers and handlers are read on `sampleQueue` (the sample-handler queue) and
+    // torn down from other threads (stopRecording, didStopWithError). Mutate them only on
+    // `sampleQueue` so a sample buffer can never use a writer that is being closed/nilled,
+    // which would race the non-thread-safe AVAudioFile underneath.
+    let systemWriter = CapturedAudioFileWriter(url: systemURL)
+    let microphoneWriter = CapturedAudioFileWriter(url: microphoneURL)
+    sampleQueue.sync {
+      self.systemWriter = systemWriter
+      self.microphoneWriter = microphoneWriter
+      self.onLevel = onLevel
+      self.onSample = onSample
+      self.onWriteFailure = onWriteFailure
+      self.reportedWriteFailureSources = []
+    }
 
     let stream = SCStream(filter: filter, configuration: configuration, delegate: self)
     try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: sampleQueue)
@@ -105,13 +122,21 @@ public final class SystemAudioCaptureService: NSObject {
     closeWriters()
   }
 
+  /// Closes and releases the writers/handlers. Runs the teardown on `sampleQueue` (the same
+  /// serial queue that delivers sample buffers) so it cannot overlap an in-flight write. Safe
+  /// to call from `stopRecording()` and the `didStopWithError` delegate callback because
+  /// neither runs on `sampleQueue`, so the `sync` hop cannot deadlock.
   private func closeWriters() {
-    systemWriter?.close()
-    microphoneWriter?.close()
-    systemWriter = nil
-    microphoneWriter = nil
-    onLevel = nil
-    onSample = nil
+    sampleQueue.sync {
+      systemWriter?.close()
+      microphoneWriter?.close()
+      systemWriter = nil
+      microphoneWriter = nil
+      onLevel = nil
+      onSample = nil
+      onWriteFailure = nil
+      reportedWriteFailureSources = []
+    }
     isPaused = false
     isMicrophoneMuted = false
   }
@@ -173,6 +198,11 @@ extension SystemAudioCaptureService: SCStreamOutput, SCStreamDelegate {
       }
     } catch {
       onLevel?(source, 0)
+      // Report the first write failure for this source so the UI can warn that capture is
+      // incomplete. Subsequent failures for the same source are suppressed to avoid spamming.
+      if reportedWriteFailureSources.insert(source).inserted {
+        onWriteFailure?(source)
+      }
     }
   }
 
