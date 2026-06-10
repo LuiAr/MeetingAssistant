@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.devswift.MeetingAssistant.rebuild.sidecar</string>
+  <key>CFBundleName</key>
+  <string>meetingcore-sidecar</string>
+  <key>CFBundleExecutable</key>
+  <string>meetingcore-sidecar</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>15.0</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>MeetingAssistant records microphone audio so local transcripts can include what you say in meetings.</string>
+  <key>NSScreenCaptureUsageDescription</key>
+  <string>MeetingAssistant captures system audio from meeting apps and browsers to transcribe remote participants.</string>
+  <key>NSSystemAudioCaptureUsageDescription</key>
+  <string>MeetingAssistant captures system audio from meeting apps and browsers to transcribe remote participants.</string>
+</dict>
+</plist>

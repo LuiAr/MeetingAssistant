@@ -1,0 +1,16 @@
+# Swift sidecar
+sidecar/.build/
+
+# Node / frontend
+app/node_modules/
+app/dist/
+
+# Rust / Tauri
+app/src-tauri/target/
+app/src-tauri/gen/
+
+# Generated app icons (copied from the repo root at build time)
+app/src-tauri/icons/
+
+# Staged, signed app bundle
+dist/

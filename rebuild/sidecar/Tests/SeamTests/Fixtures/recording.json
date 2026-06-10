@@ -1,0 +1,46 @@
+{
+  "metadata": {
+    "activeDuration": 1740.25,
+    "createdAt": "2026-06-09T09:00:00Z",
+    "duration": 1800.5,
+    "endedAt": "2026-06-09T09:30:00Z",
+    "folderName": "2026-06-09T09-00-00Z Weekly planning",
+    "id": "6F9619FF-8B86-D011-B42D-00C04FC964FF",
+    "localeIdentifier": "en_GB",
+    "microphoneAudioFileName": "microphone.caf",
+    "mixedAudioFileName": "mixed.caf",
+    "startedAt": "2026-06-09T09:00:00Z",
+    "status": "completed",
+    "systemAudioFileName": "system.caf",
+    "title": "Weekly planning",
+    "transcriptFileName": "transcript.md"
+  },
+  "pauses": [
+    {
+      "endOffset": 660,
+      "endedAt": "2026-06-09T09:11:00Z",
+      "id": "A6A977E2-7E08-4A2E-9D66-1C2B3A4D5E6F",
+      "startOffset": 600,
+      "startedAt": "2026-06-09T09:10:00Z"
+    }
+  ],
+  "transcript": [
+    {
+      "confidence": 0.92,
+      "endTime": 4.2,
+      "id": "0B7B6C5D-4E3F-2A1B-9C8D-7E6F5A4B3C2D",
+      "isFinal": true,
+      "speaker": "You",
+      "startTime": 0.5,
+      "text": "Right, let us walk through the plan for the week."
+    },
+    {
+      "endTime": 9,
+      "id": "1C8D7E6F-5A4B-3C2D-0B7B-6C5D4E3F2A1B",
+      "isFinal": true,
+      "speaker": "Computer audio",
+      "startTime": 4.2,
+      "text": "Sounds good, I have three items on my list."
+    }
+  ]
+}

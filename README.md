@@ -14,6 +14,7 @@ Everything happens on your Mac. The only time the app reaches the network is to 
 - Searchable library of past meetings with rename, delete, and Finder reveal.
 - One-click "Copy AI Context" to paste a meeting into an assistant, with configurable detail.
 - Markdown transcript export with timecoded, speaker-labelled lines.
+- Readable transcript view with a capped reading width, speaker-grouped blocks, and in-transcript search with match navigation.
 - Storage management with automatic, audio-only retention policies.
 
 ## Requirements

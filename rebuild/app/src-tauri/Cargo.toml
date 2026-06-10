@@ -1,0 +1,24 @@
+[package]
+name = "meetingassistant-rebuild"
+version = "0.1.0"
+description = "MeetingAssistant rebuild Phase 1 spike shell"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["devtools"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Embeds the frontendDist assets into the binary. Without this feature the app tries to load
+# devUrl (a Vite dev server that is not running) and renders a blank window. "tauri build"
+# enables it automatically; our script passes it explicitly to plain cargo.
+[features]
+custom-protocol = ["tauri/custom-protocol"]
+
+[[bin]]
+name = "meetingassistant-rebuild"
+path = "src/main.rs"
